@@ -9,6 +9,7 @@ private:
   int left;
   int right;
   int free;
+  int offset;
 
 protected:
     virtual void initialize();

@@ -12,7 +12,7 @@
 
 
 JinnaiHeuristic::JinnaiHeuristic(const Options &opts)
-    : Heuristic(opts) {
+  : Heuristic(opts), offset(opts.get<int>("offset")) {
 }
 
 JinnaiHeuristic::~JinnaiHeuristic() {
@@ -91,30 +91,35 @@ int JinnaiHeuristic::compute_heuristic(const State &state) {
     cout << state[robby] << ", " << state[left] 
 	 << ", " << state[right] << ", " << is_even << endl;
     */
+
+    int base_heuristic = unsatisfied_goal_count*3 + offset;
+    int h = 0;
+
     if (state[robby] == 0) {
       if (state[left] == free && state[right] == free) {
-	return unsatisfied_goal_count*3 - is_even;
+	h = base_heuristic - is_even;
       } else if ((state[left] == free && state[right] != free) || 
 		 (state[left] != free && state[right] == free)){
-	return unsatisfied_goal_count*3 - is_even - 1;
+	h = base_heuristic - is_even - 1;
       } else {
-	return unsatisfied_goal_count*3 - is_even - 2;
+	h = base_heuristic - is_even - 2;
       }
     } else { // state[0] == 1
       if (state[left] == free && state[right] == free) {
-	return unsatisfied_goal_count*3 - is_even + 1;
+	h = base_heuristic - is_even + 1;
       } else if ((state[left] == free && state[right] != free) || 
 		 (state[left] != free && state[right] == free)){
-	return (unsatisfied_goal_count+1)*3 + (is_even - 1) - 4; // even & odd flips here.
+	h = base_heuristic + (is_even - 1) - 1; // even & odd flips here.
       } else {
-	return unsatisfied_goal_count*3 - is_even - 3;
+	h = base_heuristic - is_even - 3;
       }
     }
     
-    // Unreachable
-    assert(false);
-    return -1;
-
+    if (h < 0) {
+      return 0;
+    }
+    return h;
+    
     /*
     std::cout << "Facts:" << std::endl;
     for (vector<vector<string> >::iterator iter = g_fact_names.begin();
@@ -129,7 +134,7 @@ int JinnaiHeuristic::compute_heuristic(const State &state) {
     // If even amount of unsat goal
     /*
     if (unsatisfied_goal_count % 2 == 0) {
-      perfect_heuristic += unsatisfied_goal_count*3;
+      perfect_heuristic += base_heuristic;
     } else {
       perfect_heuristic += (unsatisfied_goal_count-1)*3 + 4;
     }
@@ -148,6 +153,8 @@ static Heuristic *_parse(OptionParser &parser) {
     parser.document_property("safe", "yes");
     parser.document_property("preferred operators", "no");
 
+    // TODO: not sure correct.
+    parser.add_option<int>("offset");
     Heuristic::add_options_to_parser(parser);
     Options opts = parser.parse();
     if (parser.dry_run())
