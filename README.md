@@ -6,7 +6,8 @@ Expansions for fast-downward. (ex. heuristics, search engines)
 1. jinnai_heuristic
 
 Domain specific heuristic for Gripper.
-It implements a Almost Perfect Heuristics in Malte Helmert and Gabriele Roger, 2008, How Good is Almost Perfect?
+
+It implements the Almost Perfect Heuristics, examined in Malte Helmert and Gabriele Roger, 2008, How Good is Almost Perfect?
 
 
 
