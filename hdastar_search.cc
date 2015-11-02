@@ -7,18 +7,23 @@
 #include "g_evaluator.h"
 #include "sum_evaluator.h"
 #include "plugin.h"
+#include "per_state_information.h"
 
 #include <cassert>
 #include <cstdlib>
 #include <set>
+#include <climits>
 
-#include <mpi/mpi.h>
+#include <mpi.h>
 using namespace std;
 
 #define MPI_MSG_NODE 0 // node
 #define MPI_MSG_INCM 1 // for updating incumbent. message is unsigned int.
 #define MPI_MSG_TERM 2 // for termination.message is empty.
 #define MPI_MSG_FTERM 3 // broadcast this message when process terminated.
+#define MPI_MSG_P_INCM 4
+#define MPI_MSG_PLAN 5 // plan construction
+#define MPI_MSG_PLAN_TERM 6 // plan construction
 HDAStarSearch::HDAStarSearch(const Options &opts) :
 		SearchEngine(opts), reopen_closed_nodes(
 				opts.get<bool>("reopen_closed")), do_pathmax(
@@ -33,6 +38,33 @@ HDAStarSearch::HDAStarSearch(const Options &opts) :
 	if (opts.contains("preferred")) {
 		preferred_operator_heuristics = opts.get_list<Heuristic *>("preferred");
 	}
+
+	if (opts.contains("distribution")) {
+//		printf("SELECTED DISTRIBUTION HASH\n");
+		hash = opts.get<DistributionHash*>("distribution");
+	} else {
+//		printf("DEFAULT HASH\n");
+		hash = new ZobristHash(opts);
+	}
+
+	if (opts.contains("threshold")) {
+		threshold = opts.get<unsigned int>("threshold");
+	} else {
+		threshold = 0;
+	}
+
+	if (opts.contains("pi")) {
+		calc_pi = opts.get<bool>("pi");
+	} else {
+		calc_pi = false;
+	}
+
+//	calc_pi = true;
+	pi = 3252;
+
+	node_sent = 0;
+	msg_sent = 0;
+	termination_counter = 0;
 }
 
 void HDAStarSearch::initialize() {
@@ -79,97 +111,213 @@ void HDAStarSearch::initialize() {
 	search_progress.inc_evaluated_states();
 	search_progress.inc_evaluations(heuristics.size());
 
-	if (open_list->is_dead_end()) {
-		cout << "Initial state is a dead end." << endl;
-	} else {
-		search_progress.get_initial_h_values();
-		if (f_evaluator) {
-			f_evaluator->evaluate(0, false);
-			search_progress.report_f_value(f_evaluator->get_value());
-		}
-		search_progress.check_h_progress(0);
-		SearchNode node = search_space.get_node(initial_state);
-		node.open_initial(heuristics[0]->get_value());
-
-		open_list->insert(initial_state.get_id());
-	}
-
 	///////////////////////////////
 	// MPI related initialization
 	///////////////////////////////
 	// 1. initialize MPI
 	// 2. set id, number of the nodes
-	MPI_Init(NULL, NULL);
+	int initialized;
+	MPI_Initialized(&initialized);
+	if (!initialized) {
+		MPI_Init(NULL, NULL);
+	}
+
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
+	printf("%d/%d processes\n", id, world_size);
 	outgo_buffer.resize(world_size);
 
 	n_vars = g_variable_domain.size(); // number of variables for a state. used to convert Node <-> bytes
 	s_var = sizeof(state_var_t); // = sizeof(state_var_t)
-	node_size = n_vars * s_var + 3 * sizeof(int); // TODO: tentative to change as implementation progress!
+	node_size = n_vars * s_var + 6 * sizeof(int);
+
+	incumbent = INT_MAX;
+	has_sent_first_term = false;
+
+	income_counter = 0;
+	incumbent_counter = 0;
+
+	incumbent_goal_state = pair<unsigned int, unsigned int>(0, INT_MAX);
+
+	track_function = false;
+
+	g_state_registry->subscribe(&distribution_hash_value);
+	g_state_registry->subscribe(&parent_node_process_id);
 
 	printf("n_vars = %d\n", n_vars);
 	printf("s_var = %d\n", s_var);
 	printf("node_size = %d\n", node_size);
 
+	// TODO: not sure we need this or Buffer_attach will do that for us.
+	int buffer_size = (node_size + MPI_BSEND_OVERHEAD) * world_size * 100
+			+ (node_size * threshold + MPI_BSEND_OVERHEAD) * world_size * 10000;
+
+//	printf("buffersize: %u x %d x 10 + %u x %u x %d x 100 + %u = %u\n",
+//			node_size, world_size, node_size, threshold, world_size,
+//			MPI_BSEND_OVERHEAD, buffer_size);
+	printf("buffersize=%u\n", buffer_size);
+	mpi_buffer = new unsigned char[buffer_size];
+	fill(mpi_buffer, mpi_buffer + buffer_size, 0);
+	MPI_Buffer_attach((void *) mpi_buffer, buffer_size);
+//	MPI_Buffer_attach(malloc(buffer_size), buffer_size - MPI_BSEND_OVERHEAD);
+
+	// Put initial state into open_list ONLY for id == 0
+	if (id == 0) {
+		if (open_list->is_dead_end()) {
+			cout << "Initial state is a dead end." << endl;
+		} else {
+			search_progress.get_initial_h_values();
+			if (f_evaluator) {
+				f_evaluator->evaluate(0, false);
+				search_progress.report_f_value(f_evaluator->get_value());
+			}
+			search_progress.check_h_progress(0);
+			SearchNode node = search_space.get_node(initial_state);
+
+			// PerStateInformationForInitialState
+			unsigned int d_hash = hash->hash(initial_state);
+			distribution_hash_value[initial_state] = d_hash;
+
+			parent_node_process_id[initial_state] = mpi_state_id(0, 0);
+
+			node.open_initial(heuristics[0]->get_value());
+			open_list->insert(initial_state.get_id());
+		}
+	}
+
+	MPI_Barrier(MPI_COMM_WORLD);
+
 }
 
 void HDAStarSearch::statistics() const {
 
-	// HACK! HACK!
-	// We have to finalize MPI but could not find a proper finalizing method in searchengine.
-	// As this method is always called, im gonna put finalizing methods here.
-	MPI_Finalize();
-
 	search_progress.print_statistics();
 	search_space.statistics();
+	printf("Sent %u nodes.\n", node_sent);
+	printf("Sent %u messages.\n", msg_sent);
 }
 
 int HDAStarSearch::step() {
+	++income_counter;
+//	if (income_counter % 100000 == 0) {
+//		printf("step %d\n", id);
+//	}
+//	printf("step %d\n", id);
 //	MPI_Status status;
 //	MPI_Request request;
 	///////////////////////////////
 	// Receive from Income Queue
 	///////////////////////////////
-	// TODO: Implement MPI_Recv() to receive nodes from income queue.
+//	if (id == 0) {
+//		printf("cc%d\n", 1);
+//	}
 	receive_nodes_from_queue();
-
+//	if (id == 0) {
+//		printf("cc%d\n", 2);
+//	}
+	update_incumbent();
 	///////////////////////////////
 	// OPEN List open.pop()
 	///////////////////////////////
+//	if (id == 0) {
+//		printf("cc%d\n", 3);
+//	}
+
 	pair<SearchNode, bool> n = fetch_next_node(); // open.pop()
 //	if (!n.second) {
 //		return FAILED;
 //	}
 
+//	if (id == 0) {
+//		printf("cc%d\n", 4);
+//	}
+
 	if (!n.second) {
-		flush_outgo_buffers(0);
-		bool has_sent_first_term = false;
+//		printf("null %d\n", id);
+//		if (id == 0) {
+//			printf("cc%d\n", 41);
+//		}
+
+		if (flush_outgo_buffers(0)) {
+			return IN_PROGRESS;
+		}
+//		income_counter = INT_MAX;
+//		if (id == 0) {
+//			printf("cc%d\n", 42);
+//		}
+
+		has_sent_first_term = false;
 		if (termination_detection(has_sent_first_term)) {
 			printf("%d terminated\n", id);
-			return SOLVED; // TODO: might mean FAILED
+			Plan plan;
+			State s = n.first.get_state();
+//			search_space.trace_path(s, plan);
+			set_plan(plan); // TODO: this plan is ad hoc void plan.
+
+			for (int i = 0; i < world_size; ++i) {
+				if (i != id) {
+					MPI_Bsend(NULL, 0, MPI_BYTE, i, MPI_MSG_FTERM,
+							MPI_COMM_WORLD);
+				}
+			}
+
+			if (incumbent != INT_MAX) {
+				termination();
+				return SOLVED;
+			} else {
+				termination();
+				return FAILED;
+			}
 		}
+//		if (id == 0) {
+//			printf("cc%d\n", 43);
+//		}
+
 		return IN_PROGRESS;
 	}
 
+	has_sent_first_term = false;
+
 	SearchNode node = n.first;
+
+//	if (id == 0) {
+//		printf("cc%d\n", 5);
+//	}
 
 	State s = node.get_state();
 
 	///////////////////////////////
 	// Check Goal
 	///////////////////////////////
+//	if (id == 0) {
+//		printf("cc%d\n", 6);
+//	}
+
 	if (test_goal(s)) {
-		// TODO: set incumbent cost
-		cout << "Solution found!: g = " << node.get_g() << endl;
-//		unsigned int incumbent = node.get_g();
+		cout << id << " found a solution!: g = " << node.get_g() << endl;
+		incumbent = node.get_g();
 		for (int i = 0; i < world_size; ++i) {
-			MPI_Send(NULL, 0, MPI_BYTE, i, MPI_MSG_FTERM, MPI_COMM_WORLD);
+			if (i != id) {
+				MPI_Bsend(&incumbent, 1, MPI_INT, i, MPI_MSG_INCM,
+						MPI_COMM_WORLD);
+			}
 		}
-		return SOLVED; // TODO: might mean FAILED
+		// Each process owns the shortest path they found.
+		if (incumbent < incumbent_goal_state.second) {
+			incumbent_goal_state = std::pair<unsigned int, int>(
+					s.get_id().hash(), incumbent);
+		}
+		Plan plan;
+//		search_space.trace_path(s, plan); // TODO: need to implement trace_path for HDA*
+		set_plan(plan); // TODO: this plan is ad hoc void plan.
+
+		return IN_PROGRESS;
 	}
 //	if (check_goal_and_set_plan(s)) {
 //		return SOLVED;
+//	}
+//	if (id == 0) {
+//		printf("cc%d\n", 7);
 //	}
 
 	vector<const Operator *> applicable_ops;
@@ -177,6 +325,11 @@ int HDAStarSearch::step() {
 
 	g_successor_generator->generate_applicable_ops(s, applicable_ops);
 	// This evaluates the expanded state (again) to get preferred ops
+
+//	if (id == 0) {
+//		printf("cc%d\n", 8);
+//	}
+
 	for (int i = 0; i < preferred_operator_heuristics.size(); i++) {
 		Heuristic *h = preferred_operator_heuristics[i];
 		h->evaluate(s);
@@ -190,138 +343,131 @@ int HDAStarSearch::step() {
 	}
 	search_progress.inc_evaluations(preferred_operator_heuristics.size());
 
+//	if (id == 0) {
+//		printf("cc%d\n", 9);
+//	}
+
 	///////////////////////////////
 	// Expand node
 	///////////////////////////////
 	for (int i = 0; i < applicable_ops.size(); i++) {
+		if (calc_pi) {
+			calculate_pi();
+		}
 		const Operator *op = applicable_ops[i];
 
-		if ((node.get_real_g() + op->get_cost()) >= bound)
-			continue;
+		unsigned int d_hash = hash->hash_incremental(s,
+				distribution_hash_value[s], op); // TODO: not sure about int <-> uint.
+		unsigned int d_process = d_hash % world_size;
 
-		unsigned char* d = new unsigned char[node_size];
-		generate_node_as_bytes(&node, op, d);
+//		printf("%u --expd-> %u\n", distribution_hash_value[s], d_hash);
 
-		// TODO: Zobrist Hash can be implemented as incremental hashing.
-		// maybe
-		MPI_Send(d, node_size, MPI_BYTE, (id + 1) % world_size, MPI_MSG_NODE,
-				MPI_COMM_WORLD);
-
-//		printf("send node from %d to %d\n", id, (id + 1) % world_size);
-//		node.dump();
-
-		////////////////////////////////////
-		// TODO: operations below should be run at receiving process
-		////////////////////////////////////
-
-//		State succ_state = g_state_registry->get_successor_state(s, *op);
-//		search_progress.inc_generated();
-//		bool is_preferred = (preferred_ops.find(op) != preferred_ops.end());
-//
-//		SearchNode succ_node = search_space.get_node(succ_state);
-//
-//		// Previously encountered dead end. Don't re-evaluate.
-//		if (succ_node.is_dead_end())
-//			continue;
-//
-//		// update new path
-//		if (use_multi_path_dependence || succ_node.is_new()) {
-//			bool h_is_dirty = false;
-//			for (size_t i = 0; i < heuristics.size(); ++i) {
-//				/*
-//				 Note that we can't break out of the loop when
-//				 h_is_dirty is set to true or use short-circuit
-//				 evaluation here. We must call reach_state for each
-//				 heuristic for its side effects.
-//				 */
-//				if (heuristics[i]->reach_state(s, *op, succ_state))
-//					h_is_dirty = true;
+//		if (d_process != id) {
+		if (true) {
+//			if (id == 0) {
+//				printf("cc%d\n", 10);
 //			}
-//			if (h_is_dirty && use_multi_path_dependence)
-//				succ_node.set_h_dirty();
-//		}
-//
-//		///////////////////////////////
-//		// Push new nodes to a MPI_Send
-//		///////////////////////////////
-//		// TODO: Implement MPI
-//
-//		if (succ_node.is_new()) {
-//			// We have not seen this state before.
-//			// Evaluate and create a new node.
-//			for (size_t i = 0; i < heuristics.size(); i++)
-//				heuristics[i]->evaluate(succ_state);
-//			succ_node.clear_h_dirty();
-//			search_progress.inc_evaluated_states();
-//			search_progress.inc_evaluations(heuristics.size());
-//
-//			// Note that we cannot use succ_node.get_g() here as the
-//			// node is not yet open. Furthermore, we cannot open it
-//			// before having checked that we're not in a dead end. The
-//			// division of responsibilities is a bit tricky here -- we
-//			// may want to refactor this later.
-//			open_list->evaluate(node.get_g() + get_adjusted_cost(*op),
-//					is_preferred);
-//			bool dead_end = open_list->is_dead_end();
-//			if (dead_end) {
-//				succ_node.mark_as_dead_end();
-//				search_progress.inc_dead_ends();
-//				continue;
-//			}
-//
-//			//TODO:CR - add an ID to each state, and then we can use a vector to save per-state information
-//			int succ_h = heuristics[0]->get_heuristic();
-//			if (do_pathmax) {
-//				if ((node.get_h() - get_adjusted_cost(*op)) > succ_h) {
-//					//cout << "Pathmax correction: " << succ_h << " -> " << node.get_h() - get_adjusted_cost(*op) << endl;
-//					succ_h = node.get_h() - get_adjusted_cost(*op);
-//					heuristics[0]->set_evaluator_value(succ_h);
-//					open_list->evaluate(node.get_g() + get_adjusted_cost(*op),
-//							is_preferred);
-//					search_progress.inc_pathmax_corrections();
+
+			// TODO: this allocation is not efficient
+//			unsigned char* d = new unsigned char[node_size];
+			unsigned int s = outgo_buffer[d_process].size();
+			outgo_buffer[d_process].resize(s + node_size);
+
+			unsigned char* p = outgo_buffer[d_process].data();
+			p += s;
+			// TODO: just put into outgo_buffer space rather than allocating d.
+			if (generate_node_as_bytes(&node, op, p, d_hash)) {
+//				unsigned int s = outgo_buffer[d_process].size();
+//				outgo_buffer[d_process].resize(s + node_size);
+//				std::copy(d, d + node_size, &(outgo_buffer[d_process][s]));
+			} else {
+				outgo_buffer[d_process].resize(s);
+				// the node is >= incumbent
+				// Throw away a node if its over incumbent!
+//				State succ_state = g_state_registry->get_successor_state(s,
+//						*op);
+//				search_progress.inc_generated();
+//				SearchNode succ_node = search_space.get_node(succ_state);
+//				if (succ_node.is_dead_end()) {
+//					continue;
 //				}
+			}
+
+//			delete[] d;
+		} else {
+//			if (id == 0) {
+//				printf("cc%d\n", 11);
 //			}
-//			succ_node.open(succ_h, node, op);
-//
-//			///////////////////////////////
-//			// Push new nodes to a MPI_Send
-//			///////////////////////////////
-//			// TODO: Implement MPI
-//
-//			open_list->insert(succ_state.get_id());
-//			if (search_progress.check_h_progress(succ_node.get_g())) {
-//				reward_progress();
-//			}
-//		} else if (succ_node.get_g() > node.get_g() + get_adjusted_cost(*op)) {
-//			// We found a new cheapest path to an open or closed state.
-//			if (reopen_closed_nodes) {
-//				//TODO:CR - test if we should add a reevaluate flag and if it helps
-//				// if we reopen closed nodes, do that
-//				if (succ_node.is_closed()) {
-//					/* TODO: Verify that the heuristic is inconsistent.
-//					 * Otherwise, this is a bug. This is a serious
-//					 * assertion because it can show that a heuristic that
-//					 * was thought to be consistent isn't. Therefore, it
-//					 * should be present also in release builds, so don't
-//					 * use a plain assert. */
-//					//TODO:CR - add a consistent flag to heuristics, and add an assert here based on it
-//					search_progress.inc_reopened();
-//				}
-//				succ_node.reopen(node, op);
-//				heuristics[0]->set_evaluator_value(succ_node.get_h());
-//				// TODO: this appears fishy to me. Why is here only heuristic[0]
-//				// involved? Is this still feasible in the current version?
-//				open_list->evaluate(succ_node.get_g(), is_preferred);
-//
-//				open_list->insert(succ_state.get_id());
-//			} else {
-//				// if we do not reopen closed nodes, we just update the parent pointers
-//				// Note that this could cause an incompatibility between
-//				// the g-value and the actual path that is traced back
-//				succ_node.update_parent(node, op);
-//			}
-//		}
+
+			if ((node.get_real_g() + op->get_cost()) >= incumbent) {
+				continue;
+			}
+			State succ_state = g_state_registry->get_successor_state(s, *op);
+			search_progress.inc_generated();
+			bool is_preferred = (preferred_ops.find(op) != preferred_ops.end());
+
+			SearchNode succ_node = search_space.get_node(succ_state);
+
+			// same as A*
+
+			if (succ_node.is_new()) {
+				// We have not seen this state before.
+				// Evaluate and create a new node.
+				for (size_t i = 0; i < heuristics.size(); i++)
+					heuristics[i]->evaluate(succ_state);
+				succ_node.clear_h_dirty();
+				search_progress.inc_evaluated_states();
+				search_progress.inc_evaluations(heuristics.size());
+
+				// Note that we cannot use succ_node.get_g() here as the
+				// node is not yet open. Furthermore, we cannot open it
+				// before having checked that we're not in a dead end. The
+				// division of responsibilities is a bit tricky here -- we
+				// may want to refactor this later.
+				open_list->evaluate(node.get_g() + get_adjusted_cost(*op),
+						is_preferred);
+				bool dead_end = open_list->is_dead_end();
+				if (dead_end) {
+					succ_node.mark_as_dead_end();
+					search_progress.inc_dead_ends();
+					continue;
+				}
+
+				int succ_h = heuristics[0]->get_heuristic();
+
+				succ_node.open(succ_h, node, op);
+
+				open_list->insert(succ_state.get_id());
+				if (search_progress.check_h_progress(succ_node.get_g())) {
+					reward_progress();
+				}
+			} else if (succ_node.get_g()
+					> node.get_g() + get_adjusted_cost(*op)) {
+				// We found a new cheapest path to an open or closed state.
+				if (reopen_closed_nodes) {
+
+					// if we reopen closed nodes, do that
+					if (succ_node.is_closed()) {
+						search_progress.inc_reopened();
+					}
+					succ_node.reopen(node, op);
+					heuristics[0]->set_evaluator_value(succ_node.get_h());
+
+					open_list->evaluate(succ_node.get_g(), is_preferred);
+
+					open_list->insert(succ_state.get_id());
+				} else {
+					// hdastar always reopens closed nodes
+				}
+			}
+		}
 	}
+
+//	if (id == 0) {
+//		printf("cc%d\n", 12);
+//	}
+
+	flush_outgo_buffers(threshold);
 
 	return IN_PROGRESS;
 }
@@ -345,47 +491,18 @@ pair<SearchNode, bool> HDAStarSearch::fetch_next_node() {
 		vector<int> last_key_removed;
 		StateID id = open_list->remove_min(
 				use_multi_path_dependence ? &last_key_removed : 0);
-		// TODO is there a way we can avoid creating the state here and then
-		//      recreate it outside of this function with node.get_state()?
-		//      One way would be to store State objects inside SearchNodes
-		//      instead of StateIDs
 		State s = g_state_registry->lookup_state(id);
 		SearchNode node = search_space.get_node(s);
 
+		// The first found path is not always the optimal path in HDA*.
+		if (node.get_g() + node.get_h() >= incumbent) {
+//			printf("overincumbent\n");
+			SearchNode dummy_node = search_space.get_node(g_initial_state());
+			return make_pair(dummy_node, false);
+		}
+
 		if (node.is_closed())
 			continue;
-
-		if (use_multi_path_dependence) {
-			assert(last_key_removed.size() == 2);
-			int pushed_h = last_key_removed[1];
-			assert(node.get_h() >= pushed_h);
-			if (node.get_h() > pushed_h) {
-				// cout << "LM-A* skip h" << endl;
-				continue;
-			}
-			assert(node.get_h() == pushed_h);
-			if (!node.is_closed() && node.is_h_dirty()) {
-				for (size_t i = 0; i < heuristics.size(); i++)
-					heuristics[i]->evaluate(node.get_state());
-				node.clear_h_dirty();
-				search_progress.inc_evaluations(heuristics.size());
-
-				open_list->evaluate(node.get_g(), false);
-				bool dead_end = open_list->is_dead_end();
-				if (dead_end) {
-					node.mark_as_dead_end();
-					search_progress.inc_dead_ends();
-					continue;
-				}
-				int new_h = heuristics[0]->get_heuristic();
-				if (new_h > node.get_h()) {
-					assert(node.is_open());
-					node.increase_h(new_h);
-					open_list->insert(node.get_state_id());
-					continue;
-				}
-			}
-		}
 
 		node.close();
 		assert(!node.is_dead_end());
@@ -398,6 +515,630 @@ pair<SearchNode, bool> HDAStarSearch::fetch_next_node() {
 /////////////////////////////
 // MPI related functions
 /////////////////////////////
+
+bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
+		const Operator* op, unsigned char* d, unsigned int d_hash) {
+	////////////////////////////
+	// State
+	////////////////////////////
+	State parent_s = parent_node->get_state();
+
+	State s = g_state_registry->get_successor_state_by_dummy(parent_s, *op);
+//	(void *) child;
+
+//	State s = g_state_registry->get_successor_state(parent_s, *op);
+
+	// First check if its f value is over/equal incumbent.
+	int g = parent_node->get_g() + get_adjusted_action_cost(*op, cost_type);
+	for (size_t i = 0; i < heuristics.size(); i++) {
+		heuristics[i]->evaluate(s);
+	}
+	int h = heuristics[0]->get_value();
+	if (g + h >= incumbent) {
+		g_state_registry->reset_dummy_state();
+		return false;
+	}
+	search_progress.inc_evaluated_states();
+	search_progress.inc_evaluations(heuristics.size());
+	++node_sent;
+
+	// what we need for the state
+	// 1. state_var_t*: can implement
+	// 2. heuristics[i]->evaluate(s): need to pass State
+	// 3. thats all!
+
+	// 1. get buffer from parent
+	// 2. copy to new buffer
+	// 3. build state from the new buffer
+	// 4. calculate heuristic
+	// 5.
+
+	memcpy(d, s.get_raw_data(), n_vars * s_var);
+//	for (int i = 0; i < n_vars; ++i) {
+//		state_var_t si = s[i];
+//		typeToBytes(si, &(d[s_var * i]));
+//	}
+
+	////////////////////////////
+	// SearchNodeInfo
+	////////////////////////////
+	// Other than the state, we are going to send informations below
+	// 1. g
+	// 2. h
+	// 3. op_index
+	// 4. distribution_hash_value
+	// 5. parent_node_processer_id
+
+//	typeToBytes(g, d + n_vars * s_var);
+//	typeToBytes(h, d + n_vars * s_var + sizeof(int));
+
+	int op_index = op - &*g_operators.begin(); // index is universal at all processes
+//	typeToBytes(op_index, &(d[n_vars * s_var + 2 * sizeof(int)]));
+//	typeToBytes(d_hash, &(d[n_vars * s_var + 3 * sizeof(int)]));
+
+//	printf("pre = %d, post = %d\n", distribution_hash_value[parent_s], d_hash);
+
+//	typeToBytes(id, &(d[n_vars * s_var + 4 * sizeof(int)]));
+	int state_id = parent_s.get_id().hash();
+
+//	typeToBytes(state_id, &(d[n_vars * s_var + 5 * sizeof(int)]));
+
+	int info[6];
+	info[0] = g;
+	info[1] = h;
+	info[2] = op_index;
+	info[3] = d_hash;
+	info[4] = id;
+	info[5] = state_id;
+	memcpy(d + n_vars * s_var, info, 6 * sizeof(int));
+
+//	printf("d_hash = %x -> %x\n", d_hash, info[3]);
+//	printf("d_hash = %u -> %d\n", d_hash, info[3]);
+
+	g_state_registry->reset_dummy_state();
+
+//	printf("id %d send to id %d: state:", id, d_hash % world_size);
+//	for (int i = 0; i < n_vars; ++i) {
+//		printf(" %d", s[i]);
+//	}
+//	printf(", g %d, h %d, op %2d, d_hash %-11u, ppid %d, psid %d\n", g, h, op_index,
+//			d_hash, id, state_id);
+	return true;
+}
+
+StateID HDAStarSearch::bytes_to_node(unsigned char* d) {
+	state_var_t* vars = new state_var_t[n_vars];
+
+//	printf("income d: ");
+//	for (int i = 0; i < n_vars * s_var; ++i) {
+//		printf("%d ", d[i]);
+//	}
+//	printf("\n");
+
+	memcpy(vars, d, n_vars * s_var);
+
+//	for (int i = 0; i < n_vars; ++i) {
+//		bytesToType(vars[i], &(d[i * s_var]));
+//	}
+
+	// g -> h -> op_index
+	int g, h, op_index;
+	unsigned int d_hash, parent_process_id, parent_state_id;
+//	bytesToType(g, &(d[n_vars * s_var]));
+//	bytesToType(h, &(d[n_vars * s_var + sizeof(int)]));
+//	bytesToType(op_index, &(d[n_vars * s_var + 2 * sizeof(int)]));
+//	bytesToType(d_hash, &(d[n_vars * s_var + 3 * sizeof(int)]));
+//	bytesToType(parent_process_id, &(d[n_vars * s_var + 4 * sizeof(int)]));
+//	bytesToType(parent_state_id, &(d[n_vars * s_var + 5 * sizeof(int)]));
+
+	int info[6];
+	memcpy(info, d + n_vars * s_var, 6 * sizeof(int));
+	g = info[0];
+	h = info[1];
+	op_index = info[2];
+	d_hash = info[3]; // TODO: this sounds strange for me.
+	parent_process_id = info[4];
+	parent_state_id = info[5];
+
+//	printf("%x -> %x = d_hash\n", info[3], d_hash);
+//	printf("%d -> %u = d_hash\n", d_hash, info[3]);
+
+	Operator *op = &(g_operators[op_index]);
+
+//	printf("g,h = %d,%d\n", g,h);
+//	printf("op = %d\n", op_index);
+//	printf("d_hash = %u\n", d_hash);
+//	printf("parent = %d,%d\n", parent_process_id, parent_state_id);
+
+//	printf("id = %d, vars = ", id);
+//	for (int i = 0; i < n_vars; ++i) {
+//		printf("%d ", vars[i]);
+//	}
+//	printf(", op = %d", op_index);
+//	printf("\n");
+
+	// May need to build a node from zero.
+//	State succ_state = g_state_registry->get_successor_state(s, *op);
+	State succ_state = g_state_registry->build_state(vars);
+	search_progress.inc_generated();
+//	bool is_preferred = (preferred_ops.find(op) != preferred_ops.end());
+
+	SearchNode succ_node = search_space.get_node(succ_state);
+
+//	printf("id %d recv fr id %d: state:", id, parent_process_id);
+//	for (int i = 0; i < n_vars; ++i) {
+//		printf(" %d", succ_state[i]);
+//	}
+//	printf(", g %d, h %d, op %2d, d_hash %-11u, ppid %d, psid %d\n", g, h, op_index,
+//			d_hash, parent_process_id, parent_state_id);
+
+	// Previously encountered dead end. Don't re-evaluate.
+	if (succ_node.is_dead_end())
+		return StateID::no_state;
+
+	if (succ_node.is_new()) {
+//	if (true) {
+		distribution_hash_value[succ_state] = d_hash;
+		parent_node_process_id[succ_state] = mpi_state_id(parent_process_id,
+				parent_state_id);
+
+		heuristics[0]->set_evaluator_value(h);
+		succ_node.clear_h_dirty();
+
+		open_list->evaluate(g, false);
+		bool dead_end = open_list->is_dead_end();
+		if (dead_end) {
+			succ_node.mark_as_dead_end();
+			search_progress.inc_dead_ends();
+			return StateID::no_state;
+		}
+
+		succ_node.open(g, h, op);
+
+//		succ_node.dump();
+
+		open_list->insert(succ_state.get_id());
+
+		if (search_progress.check_h_progress(succ_node.get_g())) {
+			reward_progress();
+		}
+	} else if (succ_node.get_g() > g) {
+		parent_node_process_id[succ_state] = mpi_state_id(parent_process_id,
+				parent_state_id);
+
+		if (succ_node.is_closed()) {
+			search_progress.inc_reopened();
+		}
+		// TODO: need to reopen nodes
+		succ_node.reopen(g, h, op);
+		heuristics[0]->set_evaluator_value(h);
+		// TODO: this appears fishy to me. Why is here only heuristic[0]
+		// involved? Is this still feasible in the current version?
+		open_list->evaluate(g, false);
+		open_list->insert(succ_state.get_id());
+//		printf("reopened\n");
+	} else {
+//		printf("pruned\n");
+	}
+	return succ_state.get_id();
+}
+
+void HDAStarSearch::bytes_to_nodes(unsigned char* d, unsigned int d_size) {
+	unsigned int n_nodes = d_size / node_size;
+	for (int i = 0; i < n_nodes; ++i) {
+		bytes_to_node(&(d[node_size * i]));
+	}
+//	printf("%d recieved %d nodes\n", id, n_nodes);
+}
+
+void HDAStarSearch::receive_nodes_from_queue() {
+	// 1. take messages and compile them to nodes
+	// 2. put each node a NodeID and register
+	// 3. add NodeID to the OpenList
+	// In this way we get a new nodes
+
+	MPI_Status status;
+	int has_received = 0;
+
+//	if (income_counter < 0) {
+//		++income_counter;
+//		return;
+//	}
+//	income_counter = 0;
+
+	MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_NODE, MPI_COMM_WORLD, &has_received,
+			&status);
+	while (has_received) {
+		int d_size = 0;
+		int source = status.MPI_SOURCE;
+		MPI_Get_count(&status, MPI_BYTE, &d_size); // TODO: = node_size?
+
+		// TODO: this buffer does not need to be allocated every time.
+		//       put it as a static vector?
+		unsigned char *d = new unsigned char[d_size];
+		MPI_Recv(d, d_size, MPI_BYTE, source, MPI_MSG_NODE, MPI_COMM_WORLD,
+				MPI_STATUS_IGNORE);
+
+//		std::vector<SearchNode> nodes;
+//		bytes_to_node(&nodes, d, d_size);
+//		printf("received node %d\n", id);
+		bytes_to_nodes(d, d_size);
+
+		delete[] d;
+
+		has_received = 0;
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_NODE, MPI_COMM_WORLD, &has_received,
+				&status);
+	}
+//	++income_counter;
+}
+
+// Mattern, Algorithm for distributed termination detection, 1987
+// TODO: this is correct, but not efficient
+bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
+	MPI_Status status;
+	int has_received = 0;
+//	printf("%d termination detection\n", id);
+
+//	if (id == 0) {
+//		printf("cc%d\n", 421);
+//	}
+
+//	if (income_counter % 100000 == 0) {
+//		printf("id %d: termination detection\n", id);
+//	}
+
+	MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_FTERM, MPI_COMM_WORLD, &has_received,
+			MPI_STATUS_IGNORE);
+	if (has_received) {
+		printf("received fterm\n");
+		return true;
+	}
+
+//	if (id == 0) {
+//		printf("cc%d\n", 422);
+//		printf("%d\n", (id - 1) % world_size);
+//		printf("%d\n", (id + world_size - 1) % world_size);
+//
+//	}
+
+	//	if (id == 0 && !has_sent_first_term) {
+
+	has_received = 0;
+	MPI_Iprobe((id + world_size - 1) % world_size, MPI_MSG_TERM, MPI_COMM_WORLD,
+			&has_received, &status);
+	if (has_received) {
+//		if (id == 0) {
+//			printf("cc%d\n", 423);
+//		}
+
+		unsigned char term = 0;
+		unsigned char term2 = 0;
+		MPI_Recv(&term, 1, MPI_BYTE, (id + world_size - 1) % world_size,
+				MPI_MSG_TERM, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+//		printf("%d recieved message %d\n", id, term);
+
+		has_received = 0;
+
+		MPI_Iprobe((id + world_size - 1) % world_size, MPI_MSG_TERM,
+				MPI_COMM_WORLD, &has_received, &status);
+
+//		if (id == 0) {
+//			printf("cc%d\n", 423);
+//		}
+
+		// This while loop is here to flush all messages
+		while (has_received) {
+			MPI_Recv(&term2, 1, MPI_BYTE, (id + world_size - 1) % world_size,
+					MPI_MSG_TERM, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			term = (term > term2 ? term : term2);
+			has_received = 0;
+			MPI_Iprobe((id + world_size - 1) % world_size, MPI_MSG_TERM,
+					MPI_COMM_WORLD, &has_received, &status);
+		}
+
+		if (term > 2) {
+			printf("%d terminates..\n", id);
+			MPI_Bsend(&term, 1, MPI_BYTE, (id + 1) % world_size, MPI_MSG_TERM,
+					MPI_COMM_WORLD);
+			return true;
+		}
+
+		// here term is the received message.
+		// if term == terminate_count ->     send increment
+		// if term >  terminate_count + 1 -> send terminate_count
+		// if term <  terminate_count ->     send term
+
+		if (term > termination_counter + 1) {
+			term = termination_counter;
+		}
+		termination_counter = term;
+
+		if (id == 0) {
+			++term;
+		}
+
+//		printf("%d received term %d\n", id, term);
+		printf("%d sent message %d\n", id, term);
+		MPI_Bsend(&term, 1, MPI_BYTE, (id + 1) % world_size, MPI_MSG_TERM,
+				MPI_COMM_WORLD);
+		if (term > 2) {
+			return true;
+		}
+	} else {
+//		printf("%d received no term messages\n", id);
+		termination_counter = 0;
+	}
+//	if (id == 0) {
+//		printf("cc%d\n", 424);
+//	}
+
+//	if (id == 0 && !has_sent_first_term) {
+	if (id == 0) {
+		if (income_counter % 5 == 0) {
+//		printf("%d termination detection\n", id);
+			unsigned char term = 1;
+			MPI_Bsend(&term, 1, MPI_BYTE, (id + 1) % world_size, MPI_MSG_TERM,
+					MPI_COMM_WORLD);
+//		printf("sent first term %d to %d\n", term, (id + 1) % world_size);
+			has_sent_first_term = true;
+		} else {
+		}
+		++income_counter;
+//		sleep(2);
+	}
+
+	return false;
+}
+
+void HDAStarSearch::update_incumbent() {
+	MPI_Status status;
+
+//	int incumb_count_max = (incumbent == INT_MAX) ? 1000 : 20;
+//
+//	if (incumbent_counter < incumb_count_max) {
+//		++incumbent_counter;
+//		return;
+//	}
+//	incumbent_counter = 0;
+
+	int has_received = 0;
+	MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_INCM, MPI_COMM_WORLD, &has_received,
+			&status);
+
+	if (has_received) {
+		int newincm = 0;
+		int source = status.MPI_SOURCE;
+		MPI_Recv(&newincm, 1, MPI_INT, source, MPI_MSG_INCM, MPI_COMM_WORLD,
+				MPI_STATUS_IGNORE);
+		if (incumbent > newincm) {
+			incumbent = newincm;
+		}
+		printf("id %d: incumbent = %d\n", id, incumbent);
+	}
+//	++incumbent_counter;
+}
+
+bool HDAStarSearch::flush_outgo_buffers(int f_threshold) {
+	bool flushed = false;
+	for (int i = 0; i < world_size; i++) {
+//		if (i != id) {
+		if (true) {
+			if (outgo_buffer[i].size() > f_threshold * node_size) {
+				unsigned char* d = outgo_buffer[i].data();
+//				printf("send..");
+				MPI_Bsend(d, outgo_buffer[i].size(), MPI_BYTE, i, MPI_MSG_NODE,
+						MPI_COMM_WORLD);
+//				printf("done!\n");
+
+//				printf("%d sent %lu nodes to %d\n", id,
+//						outgo_buffer[i].size() / node_size, i);
+				outgo_buffer[i].clear(); // no need to delete d
+				++msg_sent;
+				flushed = true;
+			}
+		}
+	}
+	return flushed;
+}
+
+int HDAStarSearch::termination() {
+	printf("barrier %d\n", id);
+	MPI_Barrier(MPI_COMM_WORLD);
+
+	construct_plan();
+
+	MPI_Status status;
+	printf("Flushing all incoming messages... ");
+
+	int has_received = 1;
+	unsigned char* dummy = new unsigned char[node_size * 10000];
+	while (has_received) {
+		has_received = 0;
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_FTERM, MPI_COMM_WORLD, &has_received,
+				MPI_STATUS_IGNORE);
+		if (has_received) {
+			MPI_Recv(dummy, 0, MPI_BYTE, MPI_ANY_SOURCE, MPI_MSG_FTERM,
+					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		}
+	}
+
+	printf("FTERM... ");
+
+	has_received = 1;
+	while (has_received) {
+		has_received = 0;
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_INCM, MPI_COMM_WORLD, &has_received,
+				MPI_STATUS_IGNORE);
+		if (has_received) {
+			MPI_Recv(dummy, 1, MPI_INT, MPI_ANY_SOURCE, MPI_MSG_INCM,
+					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		}
+	}
+	printf("INCM... ");
+
+	has_received = 1;
+	while (has_received) {
+		has_received = 0;
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_NODE, MPI_COMM_WORLD, &has_received,
+				&status);
+		if (has_received) {
+			int source = status.MPI_SOURCE;
+			int d_size;
+			MPI_Get_count(&status, MPI_BYTE, &d_size); // TODO: = node_size?
+			MPI_Recv(dummy, d_size, MPI_BYTE, source, MPI_MSG_NODE,
+					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		}
+	}
+	printf("NODE... ");
+
+	has_received = 1;
+	while (has_received) {
+		has_received = 0;
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_TERM, MPI_COMM_WORLD, &has_received,
+				MPI_STATUS_IGNORE);
+		if (has_received) {
+			MPI_Recv(dummy, 1, MPI_INT, MPI_ANY_SOURCE, MPI_MSG_TERM,
+					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		}
+	}
+	printf("TERM... ");
+
+	has_received = 1;
+	while (has_received) {
+		has_received = 0;
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_PLAN, MPI_COMM_WORLD, &has_received,
+				MPI_STATUS_IGNORE);
+		if (has_received) {
+			int source = status.MPI_SOURCE;
+			int d_size;
+			MPI_Get_count(&status, MPI_INT, &d_size); // TODO: = node_size?
+			MPI_Recv(dummy, d_size, MPI_INT, source, MPI_MSG_PLAN,
+					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		}
+	}
+	printf("PLAN... ");
+
+	has_received = 1;
+	while (has_received) {
+		has_received = 0;
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_PLAN_TERM, MPI_COMM_WORLD,
+				&has_received, MPI_STATUS_IGNORE);
+		if (has_received) {
+			MPI_Recv(dummy, 0, MPI_BYTE, MPI_ANY_SOURCE, MPI_MSG_PLAN_TERM,
+					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		}
+	}
+	printf("PLAN_TERM... ");
+
+	printf("done!\n");
+	printf("Buffer_detach %d\n", id);
+
+	int buffer_size;
+	MPI_Buffer_detach(&mpi_buffer, &buffer_size);
+//
+	delete[] mpi_buffer;
+
+	printf("finalize %d\n", id);
+
+//	for (int i = 0; i < )
+
+	MPI_Finalize();
+	printf("finalize done%d\n", id);
+	printf("pi = %d\n", pi);
+
+	return 0;
+}
+
+void HDAStarSearch::construct_plan() {
+
+	/*
+	 * message: [stateID(k)] [op(k)] ... [op(n-1)] [op(n)]
+	 *
+	 */
+	if (incumbent == incumbent_goal_state.second) {
+		int gid = incumbent_goal_state.first;
+		State s = g_state_registry->lookup_state(gid);
+		SearchNode s_node = search_space.get_node(s);
+		int op_index = s_node.get_creating_op_index();
+		int p[2];
+		p[1] = op_index;
+
+		std::pair<unsigned int, unsigned int> parentid =
+				parent_node_process_id[s];
+		p[0] = parentid.second;
+
+//		printf("stateid=%d: op=%d\n", p[0], p[1]);
+
+		MPI_Bsend(p, 2, MPI_INT, parentid.first, MPI_MSG_PLAN, MPI_COMM_WORLD);
+	}
+
+	MPI_Status status;
+	int has_received = 0;
+	int* pln;
+	while (true) {
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_PLAN, MPI_COMM_WORLD, &has_received,
+				&status);
+		if (has_received) {
+			int size;
+			MPI_Get_count(&status, MPI_INT, &size);
+			int source = status.MPI_SOURCE;
+			pln = new int[size + 1];
+			MPI_Recv(&(pln[1]), size, MPI_INT, source, MPI_MSG_PLAN,
+					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+			int stateid = pln[1];
+//			printf("stateid=%d: op=", stateid);
+//			for (int i = 0; i < size - 1; ++i) {
+//				printf("%d ", pln[2 + i]);
+//			}
+//			printf("\n");
+
+			if (stateid == g_initial_state().get_id().hash()) {
+				Plan pplan;
+				for (int i = 0; i < size - 1; ++i) {
+					const Operator* op = &g_operators[pln[2 + i]];
+					pplan.push_back(op);
+				}
+				set_plan(pplan);
+//				printf("done: ");
+//				for (int i = 0; i < size - 1; ++i) {
+//					printf("%d ", pln[2 + i]);
+//				}
+//				printf("\n");
+				for (int i = 0; i < world_size; ++i) {
+					MPI_Bsend(NULL, 0, MPI_BYTE, i, MPI_MSG_PLAN_TERM,
+							MPI_COMM_WORLD);
+				}
+				delete[] pln;
+				return;
+			}
+
+			State s = g_state_registry->lookup_state(stateid);
+//			s.dump_pddl();
+			SearchNode s_node = search_space.get_node(s);
+			int op_index = s_node.get_creating_op_index();
+			pln[1] = op_index;
+
+			std::pair<unsigned int, unsigned int> parentid =
+					parent_node_process_id[s];
+			pln[0] = parentid.second;
+
+			MPI_Bsend(pln, size + 1, MPI_INT, parentid.first, MPI_MSG_PLAN,
+					MPI_COMM_WORLD);
+			delete[] pln;
+		}
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_PLAN_TERM, MPI_COMM_WORLD,
+				&has_received, &status);
+		if (has_received) {
+			int source = status.MPI_SOURCE;
+			MPI_Recv(NULL, 0, MPI_BYTE, source, MPI_MSG_PLAN_TERM,
+					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			return;
+		}
+	}
+}
 
 template<typename T>
 void HDAStarSearch::typeToBytes(T& p, unsigned char* d) const {
@@ -416,321 +1157,13 @@ void HDAStarSearch::bytesToType(T& p, unsigned char* d) const {
 	}
 }
 
-// TODO: what will be the method to compile nodes into bytes and back?
-/*
- * SearchNode
- *  StateID
- *   State!
- *   PerStateInfo?   (TODO: ignore this for now)
- *  SearchNodeInfo!
- *  OperatorCost?    (TODO: ignore this for now)
- *
- */
-void HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
-		const Operator* op, unsigned char* d) {
-	////////////////////////////
-	// State
-	////////////////////////////
-	State s = parent_node->get_state();
-
-	for (int i = 0; i < n_vars; ++i) {
-		state_var_t si = s[i];
-		typeToBytes(si, &(d[s_var * i]));
+void HDAStarSearch::calculate_pi() {
+	for (int i = 0; i < 10000000; ++i) {
+		pi *= 4 + 4223.15;
+		pi /= 3;
+		pi *= pi;
+		pi %= 13424;
 	}
-////////////////////////////
-// SearchNodeInfo
-////////////////////////////
-	int g = parent_node->get_g();
-	int h = parent_node->get_h();
-
-	typeToBytes(g, d + n_vars * s_var);
-	typeToBytes(h, d + n_vars * s_var + sizeof(int));
-
-	int op_index = op - &*g_operators.begin(); // index is universal at all processes
-	typeToBytes(op_index, &(d[n_vars * s_var + 2 * sizeof(int)]));
-
-	printf("STATE: ");
-	for (int i = 0; i < n_vars; ++i) {
-		printf("%d ", s[i]);
-	}
-	printf("TEST: ");
-	for (int i = 0; i < n_vars; ++i) {
-		printf("%d ", (char) d[i]);
-	}
-	printf("\n");
-
-}
-
-// TODO
-StateID HDAStarSearch::bytes_to_node(unsigned char* d) {
-	state_var_t* vars = new state_var_t[n_vars];
-
-	printf("income d: ");
-	for (int i = 0; i < n_vars * s_var; ++i) {
-		printf("%d ", d[i]);
-	}
-	printf("\n");
-
-	for (int i = 0; i < n_vars; ++i) {
-		bytesToType(vars[i], &(d[i * s_var]));
-	}
-
-	int p_h, p_g, op_index;
-	bytesToType(p_h, &(d[n_vars * s_var]));
-	bytesToType(p_g, &(d[n_vars * s_var + sizeof(int)]));
-	bytesToType(op_index, &(d[n_vars * s_var + 2 * sizeof(int)]));
-	Operator *op = &(g_operators[op_index]);
-
-	printf("vars: ");
-	for (int i = 0; i < n_vars; ++i) {
-		printf("%d ", vars[i]);
-	}
-	printf(": op = %d", op_index);
-	printf("\n");
-
-
-
-	// May need to build a node from zero.
-//	State succ_state = g_state_registry->get_successor_state(s, *op);
-	State succ_state = g_state_registry->build_state(vars, *op);
-	search_progress.inc_generated();
-//	bool is_preferred = (preferred_ops.find(op) != preferred_ops.end());
-
-	SearchNode succ_node = search_space.get_node(succ_state);
-
-	// Previously encountered dead end. Don't re-evaluate.
-	if (succ_node.is_dead_end())
-		return StateID::no_state;
-
-	// TODO: not even sure what it does
-//	// update new path
-//	if (use_multi_path_dependence || succ_node.is_new()) {
-//		bool h_is_dirty = false;
-//		for (size_t i = 0; i < heuristics.size(); ++i) {
-//			/*
-//			 Note that we can't break out of the loop when
-//			 h_is_dirty is set to true or use short-circuit
-//			 evaluation here. We must call reach_state for each
-//			 heuristic for its side effects.
-//			 */
-////			if (heuristics[i]->reach_state(s, *op, succ_state))
-////				h_is_dirty = true;
-//		}
-//		if (h_is_dirty && use_multi_path_dependence)
-//			succ_node.set_h_dirty();
-//	}
-
-	if (succ_node.is_new()) {
-		// We have not seen this state before.
-		// Evaluate and create a new node.
-		for (size_t i = 0; i < heuristics.size(); i++)
-			heuristics[i]->evaluate(succ_state);
-		succ_node.clear_h_dirty();
-		search_progress.inc_evaluated_states();
-		search_progress.inc_evaluations(heuristics.size());
-
-		// Note that we cannot use succ_node.get_g() here as the
-		// node is not yet open. Furthermore, we cannot open it
-		// before having checked that we're not in a dead end. The
-		// division of responsibilities is a bit tricky here -- we
-		// may want to refactor this later.
-		open_list->evaluate(p_g + get_adjusted_cost(*op), false);
-		bool dead_end = open_list->is_dead_end();
-		if (dead_end) {
-			succ_node.mark_as_dead_end();
-			search_progress.inc_dead_ends();
-			return StateID::no_state;
-		}
-
-		//TODO:CR - add an ID to each state, and then we can use a vector to save per-state information
-		int succ_h = heuristics[0]->get_heuristic();
-		if (do_pathmax) {
-			if ((p_h - get_adjusted_cost(*op)) > succ_h) {
-				//cout << "Pathmax correction: " << succ_h << " -> " << node.get_h() - get_adjusted_cost(*op) << endl;
-				succ_h = p_h - get_adjusted_cost(*op);
-				heuristics[0]->set_evaluator_value(succ_h);
-				open_list->evaluate(p_g + get_adjusted_cost(*op), false);
-				search_progress.inc_pathmax_corrections();
-			}
-		}
-
-		succ_node.open(p_g, p_h, op, succ_h);
-
-		open_list->insert(succ_state.get_id());
-		if (search_progress.check_h_progress(succ_node.get_g())) {
-			reward_progress();
-		}
-	} else if (succ_node.get_g() > p_g + get_adjusted_cost(*op)) {
-		// We found a new cheapest path to an open or closed state.
-		if (reopen_closed_nodes) {
-			//TODO:CR - test if we should add a reevaluate flag and if it helps
-			// if we reopen closed nodes, do that
-			if (succ_node.is_closed()) {
-				/* TODO: Verify that the heuristic is inconsistent.
-				 * Otherwise, this is a bug. This is a serious
-				 * assertion because it can show that a heuristic that
-				 * was thought to be consistent isn't. Therefore, it
-				 * should be present also in release builds, so don't
-				 * use a plain assert. */
-				//TODO:CR - add a consistent flag to heuristics, and add an assert here based on it
-				search_progress.inc_reopened();
-			}
-//			succ_node.reopen(node, op);
-			heuristics[0]->set_evaluator_value(succ_node.get_h());
-			// TODO: this appears fishy to me. Why is here only heuristic[0]
-			// involved? Is this still feasible in the current version?
-			open_list->evaluate(succ_node.get_g(), false);
-
-			open_list->insert(succ_state.get_id());
-		} else {
-			// HDA* ALWAYS update new paths.
-//			succ_node.update_parent(node, op);
-		}
-	}
-	return succ_state.get_id();
-}
-
-void HDAStarSearch::bytes_to_nodes(vector<SearchNode>* ns, unsigned char* d,
-		unsigned int d_size) {
-//	unsigned int dp = 0;
-//	unsigned int nsize = 0;
-//	while (dp < d_size) {
-//		SearchNode* p = new SearchNode();
-//		charsToNode(&(d[dp]), *p);
-//		nodes.push_back(p);
-//		dp += p->size();
-//	}
-}
-
-void HDAStarSearch::receive_nodes_from_queue() {
-	// 1. take messages and compile them to nodes
-	// 2. put each node a NodeID and register
-	// 3. add NodeID to the OpenList
-	// In this way we get a new nodes
-
-	MPI_Status status;
-	int has_received = 0;
-	MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_NODE, MPI_COMM_WORLD, &has_received,
-			&status);
-	while (has_received != 0) {
-		int d_size = 0;
-		MPI_Get_count(&status, MPI_BYTE, &d_size); // TODO: = node_size?
-
-		unsigned char *d = new unsigned char[d_size];
-		MPI_Recv(d, d_size, MPI_BYTE, MPI_ANY_SOURCE, MPI_MSG_NODE,
-				MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-		// TODO: use Memory Pool for nodes in local
-//		std::vector<SearchNode> nodes;
-//		bytes_to_node(&nodes, d, d_size);
-		printf("received node %d\n", id);
-
-		StateID state_id = bytes_to_node(d);
-		if (state_id == StateID::no_state) {
-			printf("dead end\n");
-		} else {
-			State s = g_state_registry->lookup_state(state_id);
-			s.dump_pddl();
-//			s.dump_fdr();
-		}
-		delete[] d;
-
-		has_received = 0;
-		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_NODE, MPI_COMM_WORLD, &has_received,
-				&status);
-	}
-}
-
-// Mattern, Algorithm for distributed termination detection, 1987
-bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
-	MPI_Status status;
-	int has_received = 0;
-
-	MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_FTERM, MPI_COMM_WORLD, &has_received,
-			MPI_STATUS_IGNORE);
-	if (has_received) {
-		printf("received fterm\n");
-		return true;
-	}
-
-	if (id == 0 && !has_sent_first_term) {
-		// TODO: how can we maintain the memory while MPI_Isend is executing?
-		unsigned char term = 0;
-		MPI_Send(&term, 1, MPI_BYTE, (id + 1) % world_size, MPI_MSG_TERM,
-				MPI_COMM_WORLD);
-		printf("sent first term\n");
-		has_sent_first_term = true;
-		sleep(1);
-	}
-
-	has_received = 0;
-	MPI_Iprobe((id - 1) % world_size, MPI_MSG_TERM, MPI_COMM_WORLD,
-			&has_received, &status);
-	if (has_received) {
-		int term = 0;
-		MPI_Recv(&term, 1, MPI_BYTE, (id - 1) % world_size, MPI_MSG_TERM,
-				MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-		if (id == 0) {
-			++term;
-		}
-
-		printf("%d received term %d\n", id, term);
-		MPI_Send(&term, 1, MPI_BYTE, (id + 1) % world_size, MPI_MSG_TERM,
-				MPI_COMM_WORLD);
-		if (term > 1) {
-			return true;
-		}
-
-		MPI_Iprobe((id - 1) % world_size, MPI_MSG_TERM, MPI_COMM_WORLD,
-				&has_received, &status);
-
-		// This while loop is here to flush all messages
-		while (has_received) {
-			MPI_Recv(&term, 1, MPI_BYTE, (id - 1) % world_size, MPI_MSG_TERM,
-					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-			if (term == 1) {
-				printf("%d received term %d\n", id, term);
-				MPI_Send(&term, 1, MPI_BYTE, (id + 1) % world_size,
-						MPI_MSG_TERM, MPI_COMM_WORLD);
-				return true;
-			}
-			has_received = 0;
-			MPI_Iprobe((id - 1) % world_size, MPI_MSG_TERM, MPI_COMM_WORLD,
-					&has_received, &status);
-		}
-
-	}
-	return false;
-}
-
-// TODO: implement
-void HDAStarSearch::flush_outgo_buffers(int threshold) {
-	(void) threshold;
-//	for (int i = 0; i < world_size; ++i) {
-//		if (i != id && outgo_buffer[i].size() > threshold) {
-//			unsigned int totsize = 0;
-//			for (int j = 0; j < outgo_buffer[i].size(); ++j) {
-////				totsize += outgo_buffer[i][j].size();
-//			}
-//			unsigned char* d = new unsigned char[totsize];
-////			unsigned char* dp = d;
-//			for (int j = 0; j < outgo_buffer[i].size(); ++j) {
-////				SearchNode send = outgo_buffer[i];
-////				node_to_bytes(&send, dp);
-////						MPI_Isend(d, send.size(), MPI_BYTE, i, MPI_MSG_NODE,
-////								MPI_COMM_WORLD, &request);
-//				// TODO: send_size should be implemented.
-////				int send_size = 0; //send.size();
-////				MPI_Send(dp, send_size, MPI_BYTE, i, MPI_MSG_NODE,
-////						MPI_COMM_WORLD);
-////						printf("sent f,g = %d %d\n", send.f, send.g);
-////				dp += send_size;
-//			}
-//			delete[] d;
-//			outgo_buffer[i].clear();
-//		}
-//	}
 }
 
 void HDAStarSearch::reward_progress() {
@@ -749,6 +1182,7 @@ void HDAStarSearch::update_jump_statistic(const SearchNode &node) {
 		f_evaluator->evaluate(node.get_g(), false);
 		int new_f_value = f_evaluator->get_value();
 		search_progress.report_f_value(new_f_value);
+//		printf("id %d: f = %d\n", id, new_f_value);
 	}
 }
 
@@ -778,6 +1212,16 @@ static SearchEngine *_parse_hdastar(OptionParser &parser) {
 					"               reopen_closed=true, pathmax=false, progress_evaluator=sum([g(), h]))\n"
 					"```\n", true);
 	parser.add_option<ScalarEvaluator *>("eval", "evaluator for h-value");
+
+	parser.add_option<DistributionHash *>("distribution",
+			"distribution function for hdastar", "zobrist");
+
+	parser.add_option<unsigned int>("threshold",
+			"The number of nodes to queue up in the local outgo_buffer.", "0");
+
+	parser.add_option<bool>("pi",
+			"Add needless calculation to slow down node expansion.", "false");
+
 	parser.add_option<bool>("pathmax", "use pathmax correction", "false");
 	parser.add_option<bool>("mpd", "use multi-path dependence (LM-A*)",
 			"false");
@@ -786,7 +1230,6 @@ static SearchEngine *_parse_hdastar(OptionParser &parser) {
 	parser.document_note("dist option",
 			"Distribution method for HDA* is core to its performance.\n"
 					"dist option selects which hash function to use for distribution.");
-//	parser.add_option<DistHash *>("hash", "evaluator for h-value");
 
 	SearchEngine::add_options_to_parser(parser);
 	Options opts = parser.parse();

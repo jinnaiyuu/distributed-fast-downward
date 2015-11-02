@@ -38,12 +38,14 @@ public:
 	int get_g() const;
 	int get_real_g() const;
 	int get_h() const;
+	int get_creating_op_index() const;
 
 	void open_initial(int h);
 	void open(int h, const SearchNode &parent_node, const Operator *parent_op);
 	void open(int p_g, int p_h, Operator* op, int succ_h);
-
+	void open(int g, int h, Operator* op);
 	void reopen(const SearchNode &parent_node, const Operator *parent_op);
+	void reopen(int g, int h, const Operator* op);
 	void update_parent(const SearchNode &parent_node,
 			const Operator *parent_op);
 	void increase_h(int h);
