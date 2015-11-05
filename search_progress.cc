@@ -2,6 +2,7 @@
 
 #include <iostream>
 using namespace std;
+#include <stdio.h>
 
 SearchProgress::SearchProgress() {
     expanded_states = 0;
@@ -105,12 +106,19 @@ void SearchProgress::print_statistics() const {
         cout << "." << endl;
     }
 
-    cout << "Expanded " << expanded_states << " state(s)." << endl;
-    cout << "Reopened " << reopened_states << " state(s)." << endl;
-    cout << "Evaluated " << evaluated_states << " state(s)." << endl;
-    cout << "Evaluations: " << evaluations << endl;
-    cout << "Generated " << generated_states << " state(s)." << endl;
-    cout << "Dead ends: " << dead_end_states << " state(s)." << endl;
+    printf("Expanded %d state(s).\n", expanded_states);
+    printf("Reopened %d state(s).\n", reopened_states);
+    printf("Evaluated %d state(s).\n", evaluations);
+    printf("Evaluations: %d\n", evaluations);
+    printf("Generated %d state(s).\n", generated_states);
+    printf("Dead ends: %d state(s).\n", dead_end_states);
+
+//    cout << "Expanded " << expanded_states << " state(s)." << endl;
+//    cout << "Reopened " << reopened_states << " state(s)." << endl;
+//    cout << "Evaluated " << evaluated_states << " state(s)." << endl;
+//    cout << "Evaluations: " << evaluations << endl;
+//    cout << "Generated " << generated_states << " state(s)." << endl;
+//    cout << "Dead ends: " << dead_end_states << " state(s)." << endl;
     if (pathmax_corrections > 0) {
         cout << "Pathmax corrections: " << pathmax_corrections << endl;
     }

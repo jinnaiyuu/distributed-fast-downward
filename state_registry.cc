@@ -58,7 +58,6 @@ State StateRegistry::lookup_state(int id_int) {
 	return State(state_data_pool[id_we_needed.value], *this, id_we_needed);
 }
 
-
 const State &StateRegistry::get_initial_state() {
 	if (cached_initial_state == 0) {
 		state_data_pool.push_back(g_initial_state_buffer);
@@ -70,15 +69,16 @@ const State &StateRegistry::get_initial_state() {
 	return *cached_initial_state;
 }
 
-State &StateRegistry::get_successor_state_by_dummy(const State& parent, const Operator &op) {
+State &StateRegistry::get_successor_state_by_dummy(const State& parent,
+		const Operator &op) {
 	if (cached_dummy_state == 0) {
 		state_var_t *dummy_buffer = new state_var_t[g_variable_domain.size()];
-		fill(dummy_buffer, dummy_buffer + g_variable_domain.size(), -1);
-		state_data_pool.push_back(dummy_buffer);
-		state_var_t *vars = state_data_pool[state_data_pool.size() - 1];
-		g_axiom_evaluator->evaluate(vars);
-		StateID id = insert_id_or_pop_state();
-		cached_dummy_state = new State(lookup_state(id));
+		copy(cached_initial_state->get_buffer(),
+				cached_initial_state->get_buffer() + g_variable_domain.size(),
+				dummy_buffer);
+
+		StateID id(-2);
+	    cached_dummy_state = new State(dummy_buffer, *this, id);
 //		printf("built first dummy\n");
 	}
 	// HACK! HACK! there tricky this is trying to
@@ -93,7 +93,6 @@ State &StateRegistry::get_successor_state_by_dummy(const State& parent, const Op
 //	*p_buff = parent[0];
 //	*(p_buff + 1) = parent[1];
 
-
 //	printf("parent: ");
 //	for (int i = 0; i < g_variable_domain.size(); ++i) {
 //		printf("%d ", parent[i]);
@@ -107,6 +106,7 @@ State &StateRegistry::get_successor_state_by_dummy(const State& parent, const Op
 //	printf("\n");
 
 	// operate op to the dummy.
+	// TODO: this thing is causing a huge problem.
 	for (size_t i = 0; i < op.get_pre_post().size(); ++i) {
 		const PrePost &pre_post = op.get_pre_post()[i];
 		if (pre_post.does_fire(p_buff))
@@ -125,8 +125,6 @@ State &StateRegistry::get_successor_state_by_dummy(const State& parent, const Op
 //	}
 //	printf("\n");
 
-
-
 	return *cached_dummy_state;
 }
 
@@ -134,7 +132,9 @@ void StateRegistry::reset_dummy_state() {
 	const state_var_t* p_const = cached_dummy_state->get_buffer();
 	state_var_t* p_buff; // CAREFUL this pointer can modify const vars.
 	p_buff = (state_var_t *) (&p_const);
-	fill(p_buff, p_buff + g_variable_domain.size(), -1);
+	copy(cached_initial_state->get_buffer(),
+			cached_initial_state->get_buffer() + g_variable_domain.size(),
+			p_buff);
 }
 
 //TODO it would be nice to move the actual state creation (and operator application)

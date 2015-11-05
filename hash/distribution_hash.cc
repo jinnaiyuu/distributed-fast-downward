@@ -66,38 +66,40 @@ unsigned int MapBasedHash::hash_incremental(const State& parent,
 
 	}
 
-	state_var_t* ops = new state_var_t[g_variable_domain.size()];
-	for (int i = 0; i < g_variable_domain.size(); ++i) {
-		ops[i] = parent[i];
-	}
+	return ret;
 
-	unsigned int hp = hash(ops);
-
-
-	for (size_t i = 0; i < op->get_pre_post().size(); ++i) {
-		const PrePost &pre_post = op->get_pre_post()[i];
-		if (pre_post.does_fire(parent)) {
-			ops[pre_post.var] = pre_post.post;
-		}
-	}
-	unsigned int hc = hash(ops);
-
-
-	if (parent_d_hash == hp) {
-//		printf("%10u == %10u\n", ret, h);
-	} else {
-		printf("%10u != %10u PARENT!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", parent_d_hash, hp);
-
-	}
-
-
-	if (ret == hc) {
-//		printf("%10u == %10u\n", ret, h);
-	} else {
-		printf("%10u != %10u CHILD!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", ret, hc);
-	}
-	delete[] ops;
-	return hc;
+//	state_var_t* ops = new state_var_t[g_variable_domain.size()];
+//	for (int i = 0; i < g_variable_domain.size(); ++i) {
+//		ops[i] = parent[i];
+//	}
+//
+//	unsigned int hp = hash(ops);
+//
+//
+//	for (size_t i = 0; i < op->get_pre_post().size(); ++i) {
+//		const PrePost &pre_post = op->get_pre_post()[i];
+//		if (pre_post.does_fire(parent)) {
+//			ops[pre_post.var] = pre_post.post;
+//		}
+//	}
+//	unsigned int hc = hash(ops);
+//
+//
+//	if (parent_d_hash == hp) {
+////		printf("%10u == %10u\n", ret, h);
+//	} else {
+//		printf("%10u != %10u PARENT!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", parent_d_hash, hp);
+//
+//	}
+//
+//
+//	if (ret == hc) {
+////		printf("%10u == %10u\n", ret, h);
+//	} else {
+//		printf("%10u != %10u CHILD!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", ret, hc);
+//	}
+//	delete[] ops;
+//	return hc;
 }
 
 ZobristHash::ZobristHash(const Options &opts) :

@@ -17,6 +17,13 @@
 #include <mpi.h>
 using namespace std;
 
+//#define TRACE_EXEC
+#ifndef TRACE_EXEC
+#define dbgprintf   1 ? (void) 0 : (void)
+#else // #ifdef DEBUG
+#define dbgprintf   printf
+#endif // #ifdef DEBUG
+
 #define MPI_MSG_NODE 0 // node
 #define MPI_MSG_INCM 1 // for updating incumbent. message is unsigned int.
 #define MPI_MSG_TERM 2 // for termination.message is empty.
@@ -161,11 +168,14 @@ void HDAStarSearch::initialize() {
 	MPI_Buffer_attach((void *) mpi_buffer, buffer_size);
 //	MPI_Buffer_attach(malloc(buffer_size), buffer_size - MPI_BSEND_OVERHEAD);
 
+	unsigned int d_hash = hash->hash(initial_state);
+
 	// Put initial state into open_list ONLY for id == 0
-	if (id == 0) {
+	if (id == (d_hash % world_size)) {
 		if (open_list->is_dead_end()) {
 			cout << "Initial state is a dead end." << endl;
 		} else {
+			printf("init state start at %d\n", id);
 			search_progress.get_initial_h_values();
 			if (f_evaluator) {
 				f_evaluator->evaluate(0, false);
@@ -175,7 +185,6 @@ void HDAStarSearch::initialize() {
 			SearchNode node = search_space.get_node(initial_state);
 
 			// PerStateInformationForInitialState
-			unsigned int d_hash = hash->hash(initial_state);
 			distribution_hash_value[initial_state] = d_hash;
 
 			parent_node_process_id[initial_state] = mpi_state_id(0, 0);
@@ -209,18 +218,18 @@ int HDAStarSearch::step() {
 	// Receive from Income Queue
 	///////////////////////////////
 //	if (id == 0) {
-//		printf("cc%d\n", 1);
+//		dbgprintf ("cc%d\n", 1);
 //	}
 	receive_nodes_from_queue();
 //	if (id == 0) {
-//		printf("cc%d\n", 2);
+//		dbgprintf ("cc%d\n", 2);
 //	}
 	update_incumbent();
 	///////////////////////////////
 	// OPEN List open.pop()
 	///////////////////////////////
 //	if (id == 0) {
-//		printf("cc%d\n", 3);
+//		dbgprintf ("cc%d\n", 3);
 //	}
 
 	pair<SearchNode, bool> n = fetch_next_node(); // open.pop()
@@ -229,7 +238,7 @@ int HDAStarSearch::step() {
 //	}
 
 //	if (id == 0) {
-//		printf("cc%d\n", 4);
+//		dbgprintf ("cc%d\n", 4);
 //	}
 
 	if (!n.second) {
@@ -281,7 +290,7 @@ int HDAStarSearch::step() {
 	SearchNode node = n.first;
 
 //	if (id == 0) {
-//		printf("cc%d\n", 5);
+//		dbgprintf ("cc%d\n", 5);
 //	}
 
 	State s = node.get_state();
@@ -290,22 +299,24 @@ int HDAStarSearch::step() {
 	// Check Goal
 	///////////////////////////////
 //	if (id == 0) {
-//		printf("cc%d\n", 6);
+//		dbgprintf ("cc%d\n", 6);
 //	}
 
 	if (test_goal(s)) {
 		cout << id << " found a solution!: g = " << node.get_g() << endl;
-		incumbent = node.get_g();
-		for (int i = 0; i < world_size; ++i) {
-			if (i != id) {
-				MPI_Bsend(&incumbent, 1, MPI_INT, i, MPI_MSG_INCM,
-						MPI_COMM_WORLD);
+		if (node.get_g() < incumbent) {
+			incumbent = node.get_g();
+			for (int i = 0; i < world_size; ++i) {
+				if (i != id) {
+					MPI_Bsend(&incumbent, 1, MPI_INT, i, MPI_MSG_INCM,
+							MPI_COMM_WORLD);
+				}
 			}
-		}
-		// Each process owns the shortest path they found.
-		if (incumbent < incumbent_goal_state.second) {
-			incumbent_goal_state = std::pair<unsigned int, int>(
-					s.get_id().hash(), incumbent);
+			// Each process owns the shortest path they found.
+			if (incumbent < incumbent_goal_state.second) {
+				incumbent_goal_state = std::pair<unsigned int, int>(
+						s.get_id().hash(), incumbent);
+			}
 		}
 		Plan plan;
 //		search_space.trace_path(s, plan); // TODO: need to implement trace_path for HDA*
@@ -317,7 +328,7 @@ int HDAStarSearch::step() {
 //		return SOLVED;
 //	}
 //	if (id == 0) {
-//		printf("cc%d\n", 7);
+//		dbgprintf ("cc%d\n", 7);
 //	}
 
 	vector<const Operator *> applicable_ops;
@@ -327,7 +338,7 @@ int HDAStarSearch::step() {
 	// This evaluates the expanded state (again) to get preferred ops
 
 //	if (id == 0) {
-//		printf("cc%d\n", 8);
+//		dbgprintf ("cc%d\n", 8);
 //	}
 
 	for (int i = 0; i < preferred_operator_heuristics.size(); i++) {
@@ -344,7 +355,7 @@ int HDAStarSearch::step() {
 	search_progress.inc_evaluations(preferred_operator_heuristics.size());
 
 //	if (id == 0) {
-//		printf("cc%d\n", 9);
+//		dbgprintf ("cc%d\n", 9);
 //	}
 
 	///////////////////////////////
@@ -362,10 +373,14 @@ int HDAStarSearch::step() {
 
 //		printf("%u --expd-> %u\n", distribution_hash_value[s], d_hash);
 
-//		if (d_process != id) {
-		if (true) {
+		search_progress.inc_generated();
+
+		if (d_process != id) {
+			++node_sent;
+
+//		if (true) {
 //			if (id == 0) {
-//				printf("cc%d\n", 10);
+//				dbgprintf ("cc%d\n", 10);
 //			}
 
 			// TODO: this allocation is not efficient
@@ -376,11 +391,21 @@ int HDAStarSearch::step() {
 			unsigned char* p = outgo_buffer[d_process].data();
 			p += s;
 			// TODO: just put into outgo_buffer space rather than allocating d.
+//			if (id == 0) {
+//				dbgprintf ("cc%.1f\n", 10.1);
+//			}
 			if (generate_node_as_bytes(&node, op, p, d_hash)) {
+//				if (id == 0) {
+//					dbgprintf ("cc%.1f\n", 10.2);
+//				}
 //				unsigned int s = outgo_buffer[d_process].size();
 //				outgo_buffer[d_process].resize(s + node_size);
 //				std::copy(d, d + node_size, &(outgo_buffer[d_process][s]));
 			} else {
+//				if (id == 0) {
+//					dbgprintf ("cc%.1f\n", 10.3);
+//				}
+
 				outgo_buffer[d_process].resize(s);
 				// the node is >= incumbent
 				// Throw away a node if its over incumbent!
@@ -396,14 +421,14 @@ int HDAStarSearch::step() {
 //			delete[] d;
 		} else {
 //			if (id == 0) {
-//				printf("cc%d\n", 11);
+//				dbgprintf ("cc%d\n", 11);
 //			}
 
 			if ((node.get_real_g() + op->get_cost()) >= incumbent) {
 				continue;
 			}
 			State succ_state = g_state_registry->get_successor_state(s, *op);
-			search_progress.inc_generated();
+//			search_progress.inc_generated();
 			bool is_preferred = (preferred_ops.find(op) != preferred_ops.end());
 
 			SearchNode succ_node = search_space.get_node(succ_state);
@@ -464,7 +489,7 @@ int HDAStarSearch::step() {
 	}
 
 //	if (id == 0) {
-//		printf("cc%d\n", 12);
+//		dbgprintf ("cc%d\n", 12);
 //	}
 
 	flush_outgo_buffers(threshold);
@@ -508,6 +533,7 @@ pair<SearchNode, bool> HDAStarSearch::fetch_next_node() {
 		assert(!node.is_dead_end());
 		update_jump_statistic(node);
 		search_progress.inc_expanded();
+//		s.dump_raw();
 		return make_pair(node, true);
 	}
 }
@@ -521,12 +547,32 @@ bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
 	////////////////////////////
 	// State
 	////////////////////////////
+//	if (id == 0) {
+//		dbgprintf ("cc%.2f\n", 10.11);
+//	}
 	State parent_s = parent_node->get_state();
 
+//	if (id == 0) {
+//		dbgprintf ("cc%.2f\n", 10.12);
+//	}
+
 	State s = g_state_registry->get_successor_state_by_dummy(parent_s, *op);
+
+//    printf("\n");
+//    printf("\n");
+//    printf("PARENT: %lu\n", parent_s.get_id().hash());
+//    parent_s.dump_pddl();
+//    printf("\n");
+//    printf("CHILD: %lu\n", s.get_id().hash());
+//    s.dump_pddl();
+
 //	(void *) child;
 
 //	State s = g_state_registry->get_successor_state(parent_s, *op);
+
+//	if (id == 0) {
+//		dbgprintf ("cc%.2f\n", 10.13);
+//	}
 
 	// First check if its f value is over/equal incumbent.
 	int g = parent_node->get_g() + get_adjusted_action_cost(*op, cost_type);
@@ -535,12 +581,12 @@ bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
 	}
 	int h = heuristics[0]->get_value();
 	if (g + h >= incumbent) {
-		g_state_registry->reset_dummy_state();
+//		g_state_registry->reset_dummy_state();
 		return false;
 	}
 	search_progress.inc_evaluated_states();
 	search_progress.inc_evaluations(heuristics.size());
-	++node_sent;
+
 
 	// what we need for the state
 	// 1. state_var_t*: can implement
@@ -552,6 +598,10 @@ bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
 	// 3. build state from the new buffer
 	// 4. calculate heuristic
 	// 5.
+
+//	if (id == 0) {
+//		dbgprintf ("cc%.2f\n", 10.14);
+//	}
 
 	memcpy(d, s.get_raw_data(), n_vars * s_var);
 //	for (int i = 0; i < n_vars; ++i) {
@@ -571,6 +621,10 @@ bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
 
 //	typeToBytes(g, d + n_vars * s_var);
 //	typeToBytes(h, d + n_vars * s_var + sizeof(int));
+
+//	if (id == 0) {
+//		dbgprintf ("cc%.2f\n", 10.15);
+//	}
 
 	int op_index = op - &*g_operators.begin(); // index is universal at all processes
 //	typeToBytes(op_index, &(d[n_vars * s_var + 2 * sizeof(int)]));
@@ -595,7 +649,11 @@ bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
 //	printf("d_hash = %x -> %x\n", d_hash, info[3]);
 //	printf("d_hash = %u -> %d\n", d_hash, info[3]);
 
-	g_state_registry->reset_dummy_state();
+//	if (id == 0) {
+//		dbgprintf ("cc%.2f\n", 10.16);
+//	}
+
+//	g_state_registry->reset_dummy_state();
 
 //	printf("id %d send to id %d: state:", id, d_hash % world_size);
 //	for (int i = 0; i < n_vars; ++i) {
@@ -603,7 +661,61 @@ bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
 //	}
 //	printf(", g %d, h %d, op %2d, d_hash %-11u, ppid %d, psid %d\n", g, h, op_index,
 //			d_hash, id, state_id);
+//	if (id == 0) {
+//		dbgprintf ("cc%.2f\n", 10.17);
+//	}
+
 	return true;
+}
+
+void HDAStarSearch::receive_nodes_from_queue() {
+	// 1. take messages and compile them to nodes
+	// 2. put each node a NodeID and register
+	// 3. add NodeID to the OpenList
+	// In this way we get a new nodes
+
+	MPI_Status status;
+	int has_received = 0;
+
+//	if (income_counter < 0) {
+//		++income_counter;
+//		return;
+//	}
+//	income_counter = 0;
+
+	MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_NODE, MPI_COMM_WORLD, &has_received,
+			&status);
+	while (has_received) {
+		int d_size = 0;
+		int source = status.MPI_SOURCE;
+		MPI_Get_count(&status, MPI_BYTE, &d_size); // TODO: = node_size?
+
+		// TODO: this buffer does not need to be allocated every time.
+		//       put it as a static vector?
+		unsigned char *d = new unsigned char[d_size];
+		MPI_Recv(d, d_size, MPI_BYTE, source, MPI_MSG_NODE, MPI_COMM_WORLD,
+				MPI_STATUS_IGNORE);
+
+//		std::vector<SearchNode> nodes;
+//		bytes_to_node(&nodes, d, d_size);
+//		printf("received node %d\n", id);
+		bytes_to_nodes(d, d_size);
+
+		delete[] d;
+
+		has_received = 0;
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_NODE, MPI_COMM_WORLD, &has_received,
+				&status);
+	}
+//	++income_counter;
+}
+
+void HDAStarSearch::bytes_to_nodes(unsigned char* d, unsigned int d_size) {
+	unsigned int n_nodes = d_size / node_size;
+	for (int i = 0; i < n_nodes; ++i) {
+		bytes_to_node(&(d[node_size * i]));
+	}
+//	printf("%d recieved %d nodes\n", id, n_nodes);
 }
 
 StateID HDAStarSearch::bytes_to_node(unsigned char* d) {
@@ -660,7 +772,7 @@ StateID HDAStarSearch::bytes_to_node(unsigned char* d) {
 	// May need to build a node from zero.
 //	State succ_state = g_state_registry->get_successor_state(s, *op);
 	State succ_state = g_state_registry->build_state(vars);
-	search_progress.inc_generated();
+//	search_progress.inc_generated();
 //	bool is_preferred = (preferred_ops.find(op) != preferred_ops.end());
 
 	SearchNode succ_node = search_space.get_node(succ_state);
@@ -721,56 +833,6 @@ StateID HDAStarSearch::bytes_to_node(unsigned char* d) {
 //		printf("pruned\n");
 	}
 	return succ_state.get_id();
-}
-
-void HDAStarSearch::bytes_to_nodes(unsigned char* d, unsigned int d_size) {
-	unsigned int n_nodes = d_size / node_size;
-	for (int i = 0; i < n_nodes; ++i) {
-		bytes_to_node(&(d[node_size * i]));
-	}
-//	printf("%d recieved %d nodes\n", id, n_nodes);
-}
-
-void HDAStarSearch::receive_nodes_from_queue() {
-	// 1. take messages and compile them to nodes
-	// 2. put each node a NodeID and register
-	// 3. add NodeID to the OpenList
-	// In this way we get a new nodes
-
-	MPI_Status status;
-	int has_received = 0;
-
-//	if (income_counter < 0) {
-//		++income_counter;
-//		return;
-//	}
-//	income_counter = 0;
-
-	MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_NODE, MPI_COMM_WORLD, &has_received,
-			&status);
-	while (has_received) {
-		int d_size = 0;
-		int source = status.MPI_SOURCE;
-		MPI_Get_count(&status, MPI_BYTE, &d_size); // TODO: = node_size?
-
-		// TODO: this buffer does not need to be allocated every time.
-		//       put it as a static vector?
-		unsigned char *d = new unsigned char[d_size];
-		MPI_Recv(d, d_size, MPI_BYTE, source, MPI_MSG_NODE, MPI_COMM_WORLD,
-				MPI_STATUS_IGNORE);
-
-//		std::vector<SearchNode> nodes;
-//		bytes_to_node(&nodes, d, d_size);
-//		printf("received node %d\n", id);
-		bytes_to_nodes(d, d_size);
-
-		delete[] d;
-
-		has_received = 0;
-		MPI_Iprobe(MPI_ANY_SOURCE, MPI_MSG_NODE, MPI_COMM_WORLD, &has_received,
-				&status);
-	}
-//	++income_counter;
 }
 
 // Mattern, Algorithm for distributed termination detection, 1987
@@ -838,7 +900,7 @@ bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
 		}
 
 		if (term > 2) {
-			printf("%d terminates..\n", id);
+//			printf("%d terminates..\n", id);
 			MPI_Bsend(&term, 1, MPI_BYTE, (id + 1) % world_size, MPI_MSG_TERM,
 					MPI_COMM_WORLD);
 			return true;
@@ -859,7 +921,7 @@ bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
 		}
 
 //		printf("%d received term %d\n", id, term);
-		printf("%d sent message %d\n", id, term);
+//		printf("%d sent message %d\n", id, term);
 		MPI_Bsend(&term, 1, MPI_BYTE, (id + 1) % world_size, MPI_MSG_TERM,
 				MPI_COMM_WORLD);
 		if (term > 2) {
@@ -933,8 +995,9 @@ bool HDAStarSearch::flush_outgo_buffers(int f_threshold) {
 
 //				printf("%d sent %lu nodes to %d\n", id,
 //						outgo_buffer[i].size() / node_size, i);
-				outgo_buffer[i].clear(); // no need to delete d
 				++msg_sent;
+
+				outgo_buffer[i].clear(); // no need to delete d
 				flushed = true;
 			}
 		}
@@ -1029,6 +1092,7 @@ int HDAStarSearch::termination() {
 					MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		}
 	}
+
 	printf("PLAN_TERM... ");
 
 	printf("done!\n");
@@ -1051,6 +1115,9 @@ int HDAStarSearch::termination() {
 }
 
 void HDAStarSearch::construct_plan() {
+	if (world_size == 1) {
+		return;
+	}
 
 	/*
 	 * message: [stateID(k)] [op(k)] ... [op(n-1)] [op(n)]
@@ -1107,8 +1174,10 @@ void HDAStarSearch::construct_plan() {
 //				}
 //				printf("\n");
 				for (int i = 0; i < world_size; ++i) {
-					MPI_Bsend(NULL, 0, MPI_BYTE, i, MPI_MSG_PLAN_TERM,
-							MPI_COMM_WORLD);
+					if (i != id) {
+						MPI_Bsend(NULL, 0, MPI_BYTE, i, MPI_MSG_PLAN_TERM,
+								MPI_COMM_WORLD);
+					}
 				}
 				delete[] pln;
 				return;

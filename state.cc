@@ -35,3 +35,13 @@ void State::dump_fdr() const {
 		cout << "  #" << i << " [" << g_variable_name[i] << "] -> "
 				<< static_cast<int>(vars[i]) << endl;
 }
+
+void State::dump_raw() const {
+	// We cast the values to int since we'd get bad output otherwise
+	// if state_var_t == char.
+	cout << "# ";
+	for (size_t i = 0; i < g_variable_domain.size(); ++i) {
+		cout << static_cast<int>(vars[i]) << " ";
+	}
+	cout << endl;
+}

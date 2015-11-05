@@ -53,6 +53,8 @@ public:
     }
     void dump_pddl() const;
     void dump_fdr() const;
+    void dump_raw() const;
+
 };
 
 #endif

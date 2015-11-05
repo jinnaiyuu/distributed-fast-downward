@@ -2,6 +2,7 @@
 #include <iostream>
 #include <limits>
 using namespace std;
+#include <stdio.h>
 
 #include "globals.h"
 #include "operator_cost.h"
@@ -47,9 +48,12 @@ void SearchEngine::search() {
 	WTimer wall_timer;
 	while (step() == IN_PROGRESS)
 		;
-	cout << "Actual search time: " << timer << endl
-			<< "Actual search wall time: " << wall_timer << " [t=" << g_timer
-			<< "]" << endl;
+//	cout << "Actual search time: " << timer << endl
+//			<< "Actual search wall time: " << wall_timer << " [t=" << g_timer
+//			<< "]" << endl;
+	printf("Actual search time: %.2f \n"
+			"Actual search wall time: %f [t=%.2f]\n", timer(), wall_timer(), g_timer());
+//	g_timer.stop();
 }
 
 bool SearchEngine::check_goal_and_set_plan(const State &state) {
