@@ -23,7 +23,6 @@ using namespace std;
 #else // #ifdef DEBUG
 #define dbgprintf   printf
 #endif // #ifdef DEBUG
-
 #define MPI_MSG_NODE 0 // node
 #define MPI_MSG_INCM 1 // for updating incumbent. message is unsigned int.
 #define MPI_MSG_TERM 2 // for termination.message is empty.
@@ -60,6 +59,12 @@ HDAStarSearch::HDAStarSearch(const Options &opts) :
 		threshold = 0;
 	}
 
+	if (opts.contains("self_send")) {
+		self_send = opts.get<bool>("self_send");
+	} else {
+		self_send = true;
+	}
+
 	if (opts.contains("pi")) {
 		calc_pi = opts.get<bool>("pi");
 	} else {
@@ -71,6 +76,7 @@ HDAStarSearch::HDAStarSearch(const Options &opts) :
 
 	node_sent = 0;
 	msg_sent = 0;
+	term_msg_sent = 0;
 	termination_counter = 0;
 }
 
@@ -156,12 +162,13 @@ void HDAStarSearch::initialize() {
 	printf("node_size = %d\n", node_size);
 
 	// TODO: not sure we need this or Buffer_attach will do that for us.
-	int buffer_size = (node_size + MPI_BSEND_OVERHEAD) * world_size * 100
+	unsigned int buffer_size = (node_size + MPI_BSEND_OVERHEAD) * world_size * 100
 			+ (node_size * threshold + MPI_BSEND_OVERHEAD) * world_size * 10000;
+	unsigned int buffer_max = 400000000; // 400 MB TODO: not sure this is enough or too much.
+	if (buffer_size > buffer_max) {
+		buffer_size = 400000000;
+	}
 
-//	printf("buffersize: %u x %d x 10 + %u x %u x %d x 100 + %u = %u\n",
-//			node_size, world_size, node_size, threshold, world_size,
-//			MPI_BSEND_OVERHEAD, buffer_size);
 	printf("buffersize=%u\n", buffer_size);
 	mpi_buffer = new unsigned char[buffer_size];
 	fill(mpi_buffer, mpi_buffer + buffer_size, 0);
@@ -196,6 +203,7 @@ void HDAStarSearch::initialize() {
 
 	MPI_Barrier(MPI_COMM_WORLD);
 
+	timer.reset();
 }
 
 void HDAStarSearch::statistics() const {
@@ -204,10 +212,11 @@ void HDAStarSearch::statistics() const {
 	search_space.statistics();
 	printf("Sent %u nodes.\n", node_sent);
 	printf("Sent %u messages.\n", msg_sent);
+	printf("Sent %u termination messages.\n", term_msg_sent);
 }
 
 int HDAStarSearch::step() {
-	++income_counter;
+//	++income_counter;
 //	if (income_counter % 100000 == 0) {
 //		printf("step %d\n", id);
 //	}
@@ -255,7 +264,7 @@ int HDAStarSearch::step() {
 //			printf("cc%d\n", 42);
 //		}
 
-		has_sent_first_term = false;
+//		has_sent_first_term = false;
 		if (termination_detection(has_sent_first_term)) {
 			printf("%d terminated\n", id);
 			Plan plan;
@@ -286,6 +295,7 @@ int HDAStarSearch::step() {
 	}
 
 	has_sent_first_term = false;
+//	termination_counter = 0;
 
 	SearchNode node = n.first;
 
@@ -303,8 +313,12 @@ int HDAStarSearch::step() {
 //	}
 
 	if (test_goal(s)) {
-		cout << id << " found a solution!: g = " << node.get_g() << endl;
+		cout << id << " found a solution!: g = " << node.get_g() << " [t="
+				<< g_timer << "]" << endl;
+
 		if (node.get_g() < incumbent) {
+			search_time = timer();
+
 			incumbent = node.get_g();
 			for (int i = 0; i < world_size; ++i) {
 				if (i != id) {
@@ -375,21 +389,24 @@ int HDAStarSearch::step() {
 
 		search_progress.inc_generated();
 
-		if (d_process != id) {
-			++node_sent;
-
+		if (self_send || (d_process != id)) {
+//			++node_sent;
+			// TODO: TODO: optimize self_send later.
 //		if (true) {
+			if (d_process != id) {
+				++node_sent;
+			}
 //			if (id == 0) {
 //				dbgprintf ("cc%d\n", 10);
 //			}
 
 			// TODO: this allocation is not efficient
 //			unsigned char* d = new unsigned char[node_size];
-			unsigned int s = outgo_buffer[d_process].size();
-			outgo_buffer[d_process].resize(s + node_size);
+			unsigned int size = outgo_buffer[d_process].size();
+			outgo_buffer[d_process].resize(size + node_size);
 
 			unsigned char* p = outgo_buffer[d_process].data();
-			p += s;
+			p += size;
 			// TODO: just put into outgo_buffer space rather than allocating d.
 //			if (id == 0) {
 //				dbgprintf ("cc%.1f\n", 10.1);
@@ -406,7 +423,7 @@ int HDAStarSearch::step() {
 //					dbgprintf ("cc%.1f\n", 10.3);
 //				}
 
-				outgo_buffer[d_process].resize(s);
+				outgo_buffer[d_process].resize(size);
 				// the node is >= incumbent
 				// Throw away a node if its over incumbent!
 //				State succ_state = g_state_registry->get_successor_state(s,
@@ -458,14 +475,26 @@ int HDAStarSearch::step() {
 					continue;
 				}
 
-				int succ_h = heuristics[0]->get_heuristic();
+				int succ_h = heuristics[0]->get_value();
 
 				succ_node.open(succ_h, node, op);
+				distribution_hash_value[succ_state] = d_hash;
+				parent_node_process_id[succ_state] = mpi_state_id(id,
+						s.get_id().hash());
 
 				open_list->insert(succ_state.get_id());
 				if (search_progress.check_h_progress(succ_node.get_g())) {
 					reward_progress();
 				}
+
+//				printf("\n");
+//				printf("\n");
+//				printf("PARENT: %lu\n", s.get_id().hash());
+//				s.dump_pddl();
+//				printf("\n");
+//				printf("CHILD: %lu\n", succ_state.get_id().hash());
+//				succ_state.dump_pddl();
+
 			} else if (succ_node.get_g()
 					> node.get_g() + get_adjusted_cost(*op)) {
 				// We found a new cheapest path to an open or closed state.
@@ -484,6 +513,9 @@ int HDAStarSearch::step() {
 				} else {
 					// hdastar always reopens closed nodes
 				}
+			} else {
+				// pruned duplicate state
+//				printf("pruned\n");
 			}
 		}
 	}
@@ -587,7 +619,6 @@ bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
 	search_progress.inc_evaluated_states();
 	search_progress.inc_evaluations(heuristics.size());
 
-
 	// what we need for the state
 	// 1. state_var_t*: can implement
 	// 2. heuristics[i]->evaluate(s): need to pass State
@@ -649,7 +680,7 @@ bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
 //	printf("d_hash = %x -> %x\n", d_hash, info[3]);
 //	printf("d_hash = %u -> %d\n", d_hash, info[3]);
 
-//	if (id == 0) {
+//	if (id == 0) {src
 //		dbgprintf ("cc%.2f\n", 10.16);
 //	}
 
@@ -912,8 +943,9 @@ bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
 		// if term <  terminate_count ->     send term
 
 		if (term > termination_counter + 1) {
-			term = termination_counter;
+			term = termination_counter + 1;
 		}
+
 		termination_counter = term;
 
 		if (id == 0) {
@@ -922,6 +954,7 @@ bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
 
 //		printf("%d received term %d\n", id, term);
 //		printf("%d sent message %d\n", id, term);
+		++term_msg_sent;
 		MPI_Bsend(&term, 1, MPI_BYTE, (id + 1) % world_size, MPI_MSG_TERM,
 				MPI_COMM_WORLD);
 		if (term > 2) {
@@ -929,21 +962,23 @@ bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
 		}
 	} else {
 //		printf("%d received no term messages\n", id);
-		termination_counter = 0;
+//		termination_counter = 0;
 	}
 //	if (id == 0) {
 //		printf("cc%d\n", 424);
 //	}
 
-//	if (id == 0 && !has_sent_first_term) {
-	if (id == 0) {
-		if (income_counter % 5 == 0) {
+	if (id == 0 && !has_sent_first_term) {
+//	if (id == 0) {
+		if (income_counter >= 100) {
 //		printf("%d termination detection\n", id);
 			unsigned char term = 1;
 			MPI_Bsend(&term, 1, MPI_BYTE, (id + 1) % world_size, MPI_MSG_TERM,
 					MPI_COMM_WORLD);
 //		printf("sent first term %d to %d\n", term, (id + 1) % world_size);
 			has_sent_first_term = true;
+			income_counter = 0;
+			++term_msg_sent;
 		} else {
 		}
 		++income_counter;
@@ -976,7 +1011,9 @@ void HDAStarSearch::update_incumbent() {
 		if (incumbent > newincm) {
 			incumbent = newincm;
 		}
-		printf("id %d: incumbent = %d\n", id, incumbent);
+		printf("id %d: incumbent = %d [t=%.2f]\n", id, incumbent, g_timer());
+		search_time = timer();
+
 	}
 //	++incumbent_counter;
 }
@@ -984,8 +1021,8 @@ void HDAStarSearch::update_incumbent() {
 bool HDAStarSearch::flush_outgo_buffers(int f_threshold) {
 	bool flushed = false;
 	for (int i = 0; i < world_size; i++) {
-//		if (i != id) {
-		if (true) {
+		if (self_send || i != id) {
+//		if (true) {
 			if (outgo_buffer[i].size() > f_threshold * node_size) {
 				unsigned char* d = outgo_buffer[i].data();
 //				printf("send..");
@@ -1006,6 +1043,9 @@ bool HDAStarSearch::flush_outgo_buffers(int f_threshold) {
 }
 
 int HDAStarSearch::termination() {
+
+	printf("Actual search wall time: %.2f [t=%.2f]\n", search_time, g_timer());
+
 	printf("barrier %d\n", id);
 	MPI_Barrier(MPI_COMM_WORLD);
 
@@ -1287,6 +1327,9 @@ static SearchEngine *_parse_hdastar(OptionParser &parser) {
 
 	parser.add_option<unsigned int>("threshold",
 			"The number of nodes to queue up in the local outgo_buffer.", "0");
+
+	parser.add_option<bool>("self_send",
+			"If true, processes use MPI to send node to myself.", "false");
 
 	parser.add_option<bool>("pi",
 			"Add needless calculation to slow down node expansion.", "false");

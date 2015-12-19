@@ -9,11 +9,17 @@
 #include "../plugin.h"
 #include "../operator.h"
 #include "../domain_transition_graph.h"
+#include "../successor_generator.h"
 
 #include <stdio.h>
 #include <string>
 
 using namespace std;
+
+template<typename T>
+bool compare_pair(const pair<int, T> a, const pair<int, T> b) {
+	return a.first < b.first;
+}
 
 DistributionHash::DistributionHash(const Options & options) {
 	// We may be able to come up with hash without map.
@@ -102,98 +108,8 @@ unsigned int MapBasedHash::hash_incremental(const State& parent,
 //	return hc;
 }
 
-ZobristHash::ZobristHash(const Options &opts) :
-		MapBasedHash(opts) {
-	// Need to think about seeds later, but for this prototype we put a fixed number.
-	g_rng.seed(717);
-
-	for (int i = 0; i < map.size(); ++i) {
-		for (int j = 0; j < map[i].size(); ++j) {
-			map[i][j] = g_rng.next32();
-		}
-	}
-
-//	for (int i = 0; i < map.size(); ++i) {
-//		for (int j = 0; j < map[i].size(); ++j) {
-//			printf("%u ", map[i][j]);
-//		}
-//		printf("\n");
-//	}
-
-}
-
-AbstractionHash::AbstractionHash(const Options &opts) :
-		MapBasedHash(opts) {
-
-	abstraction = opts.get<double>("abstraction");
-	printf("abstraction = %f\n", abstraction);
-
-	unsigned int whole_variable_space_size = 1;
-	for (int i = 0; i < map.size(); ++i) {
-		whole_variable_space_size *= map[i].size();
-	}
-
-	unsigned int abstraction_size = whole_variable_space_size * abstraction;
-	unsigned int current_size = 1;
-
-	// Need to think about seeds later, but for this prototype we put a fixed number.
-	g_rng.seed(717);
-
-	for (int i = 0; i < map.size(); ++i) {
-		current_size *= map[i].size();
-		if (current_size < abstraction_size) {
-			for (int j = 0; j < map[i].size(); ++j) {
-				map[i][j] = g_rng.next32();
-			}
-		} else {
-			break;
-		}
-	}
-}
-
-FeatureBasedStructuredZobristHash::FeatureBasedStructuredZobristHash(
-		const Options &opts) :
-		MapBasedHash(opts) {
-	abstraction = opts.get<double>("abstraction");
-	printf("abstraction = %f\n", abstraction);
-
-	unsigned int whole_variable_space_size = 1;
-	for (int i = 0; i < map.size(); ++i) {
-		whole_variable_space_size *= map[i].size();
-	}
-
-	unsigned int abstraction_size = whole_variable_space_size * abstraction;
-	unsigned int current_size = 1;
-
-	// Need to think about seeds later, but for this prototype we put a fixed number.
-	g_rng.seed(717);
-
-	// TODO: read my last stupid code and implement while i know this is suboptimal.
-	for (int i = 0; i < map.size(); ++i) {
-		vector<vector<unsigned int> > structures;
-		divideIntoTwo(i, structures);
-
-		for (int j = 0; j < structures.size(); ++j) {
-			unsigned int r = g_rng.next32();
-			for (int k = 0; k < structures[j].size(); ++k) {
-				map[i][structures[j][k]] = r;
-			}
-		}
-	}
-	for (int i = 0; i < map.size(); ++i) {
-		current_size *= map[i].size();
-		if (current_size < abstraction_size) {
-			for (int j = 0; j < map[i].size(); ++j) {
-				map[i][j] = g_rng.next32();
-			}
-		} else {
-			break;
-		}
-	}
-}
-
 // TODO: This method is messy. As it is not the core of this program, ill let it for now.
-void FeatureBasedStructuredZobristHash::divideIntoTwo(unsigned int var,
+void MapBasedHash::divideIntoTwo(unsigned int var,
 		vector<vector<unsigned int> >& structures) {
 	DomainTransitionGraph* g = g_transition_graphs[var];
 
@@ -264,7 +180,6 @@ void FeatureBasedStructuredZobristHash::divideIntoTwo(unsigned int var,
 	// TODO: not sure this assumption is right or not.
 	//       maybe not right.
 	std::vector<unsigned int> structure2; // = xor_groups[gs] - structure;
-	std::vector<unsigned int> structure2_index;
 
 	unsigned int most_connected = 0;
 	unsigned int most_connected_node = 0; // in index
@@ -299,10 +214,16 @@ void FeatureBasedStructuredZobristHash::divideIntoTwo(unsigned int var,
 	}
 	structure2.push_back(most_connected_node);
 
-	while (structure.size() + structure2.size() < map[var].size()) {
+//	while (structure.size() + structure2.size() < map[var].size()) {
+	while (true) {
+//		printf("%lu+%lu ?= %lu\n", structure.size(), structure2.size(),
+//				map[var].size());
+		if (structure.size() + structure2.size() >= map[var].size()) {
+			break;
+		}
 		transitions.clear();
 		// 2. add a node which is mostly connected to strucuture
-		for (int p = 0; p < structure2_index.size(); ++p) {
+		for (int p = 0; p < structure2.size(); ++p) {
 			vector<int> successors;
 			g->get_successors(p, successors);
 			transitions.insert(transitions.end(), successors.begin(),
@@ -313,8 +234,8 @@ void FeatureBasedStructuredZobristHash::divideIntoTwo(unsigned int var,
 		unsigned int most_connected_node = 0; // in index
 		for (int p = 0; p < map[var].size(); ++p) {
 			// if p is already in the group, then skip that.
-			if (find(structure2_index.begin(), structure2_index.end(), p)
-					!= structure2_index.end()
+			if (find(structure2.begin(), structure2.end(), p)
+					!= structure2.end()
 					|| find(structure.begin(), structure.end(), p)
 							!= structure.end()) {
 				continue;
@@ -323,6 +244,8 @@ void FeatureBasedStructuredZobristHash::divideIntoTwo(unsigned int var,
 			vector<int> successors;
 			vector<int> inter;
 			g->get_successors(p, successors);
+			inter.resize(successors.size() + structure2.size());
+
 			vector<int>::iterator it = set_intersection(successors.begin(),
 					successors.end(), structure2.begin(), structure2.end(),
 					inter.begin());
@@ -350,9 +273,241 @@ void FeatureBasedStructuredZobristHash::divideIntoTwo(unsigned int var,
 	}
 }
 
+vector<int> MapBasedHash::get_frequency_rank() {
+	// 1.  Count the number of operator which functions the variable.
+	vector<pair<int, int> > n_op_functioning;
+	for (int i = 0; i < g_variable_domain.size(); ++i) {
+		n_op_functioning.push_back(pair<int, int>(0, i));
+	}
+
+	for (int i = 0; i < g_operators.size(); ++i) {
+		const Operator op = g_operators[i];
+		for (int j = 0; j < op.get_pre_post().size(); ++j) {
+			PrePost pp = op.get_pre_post()[j];
+			++n_op_functioning[pp.var].first;
+		}
+	}
+
+	std::sort(n_op_functioning.begin(), n_op_functioning.end(),
+			&compare_pair<int>);
+
+	for (int i = 0; i < g_variable_domain.size(); ++i) {
+		printf("var %d: rank %d, %d ops\n", n_op_functioning[i].second, i,
+				n_op_functioning[i].first);
+	}
+
+	vector<int> n_op_functioning_rank(g_variable_domain.size());
+	for (int i = 0; i < g_variable_domain.size(); ++i) {
+		n_op_functioning_rank[n_op_functioning[i].second] = i;
+	}
+
+	return n_op_functioning_rank;
+}
+
+vector<int> MapBasedHash::reverse_iter_to_val(vector<int> in) {
+	vector<int> r;
+	r.resize(in.size());
+	for (int i = 0; i < in.size(); ++i) {
+		r[in[i]] = i;
+	}
+	return r;
+}
+
+ZobristHash::ZobristHash(const Options &opts) :
+		MapBasedHash(opts) {
+	// Need to think about seeds later, but for this prototype we put a fixed number.
+	g_rng.seed(717);
+
+	for (int i = 0; i < map.size(); ++i) {
+		for (int j = 0; j < map[i].size(); ++j) {
+			map[i][j] = g_rng.next32();
+		}
+	}
+
+//	for (int i = 0; i < map.size(); ++i) {
+//		for (int j = 0; j < map[i].size(); ++j) {
+//			printf("%u ", map[i][j]);
+//		}
+//		printf("\n");
+//	}
+
+}
+
+AbstractionHash::AbstractionHash(const Options &opts) :
+		MapBasedHash(opts) {
+
+	abstraction = opts.get<int>("abstraction");
+	printf("abstraction = %d\n", abstraction);
+
+//	unsigned int whole_variable_space_size = 1;
+//	for (int i = 0; i < map.size(); ++i) {
+//		whole_variable_space_size *= map[i].size();
+//	}
+
+//	unsigned int abstraction_size = abstraction;
+	unsigned int current_size = 1;
+
+	vector<int> n_op_functioning_rank = get_frequency_rank();
+	vector<int> rank = reverse_iter_to_val(n_op_functioning_rank);
+
+	g_rng.seed(717);
+
+	// Abstract out from the most influent variables.
+
+	for (int i = 0; i < map.size(); ++i) {
+		int k = rank[i];
+//		printf("current_size=%u\n", current_size);
+		if (current_size * map[k].size() > abstraction) {
+			continue;
+		}
+		current_size *= map[k].size();
+
+		for (int j = 0; j < map[k].size(); ++j) {
+			map[k][j] = g_rng.next32();
+		}
+	}
+
+	for (int i = 0; i < map.size(); ++i) {
+		for (int j = 0; j < map[i].size(); ++j) {
+			printf("%u ", map[i][j]);
+		}
+		printf("\n");
+	}
+
+}
+
+AdaptiveAbstractionHash::AdaptiveAbstractionHash(const Options &opts) :
+		MapBasedHash(opts) {
+
+	abstraction = opts.get<double>("abstraction");
+	printf("abstraction = %f\n", abstraction);
+
+	unsigned int whole_variable_space_size = 1;
+	for (int i = 0; i < map.size(); ++i) {
+		whole_variable_space_size += map[i].size();
+	}
+
+	unsigned int abstraction_size = (double) whole_variable_space_size
+			* (1.0 - abstraction);
+	unsigned int current_size = 0;
+
+	unsigned int abstraction_graph_size = 1;
+
+	vector<int> n_op_functioning_rank = get_frequency_rank();
+	vector<int> rank = reverse_iter_to_val(n_op_functioning_rank);
+
+	g_rng.seed(717);
+
+	// Abstract out from the most influent variables.
+	printf("mapsize=%lu\n", map.size());
+
+	printf("whole_variable_space_size=%u\n", whole_variable_space_size);
+	printf("abstraction_size=%u\n", abstraction_size);
+
+	for (int i = 0; i < map.size(); ++i) {
+		int k = rank[i];
+		printf("map[%d]size=%lu\n", k, map[k].size());
+//		printf("current_size=%u\n", current_size);
+		if (current_size > abstraction_size) {
+			continue;
+		}
+
+		current_size += map[k].size();
+		abstraction_graph_size *= map[k].size();
+
+//		printf("current_size=%u\n", current_size);
+//		printf("abstraction_graph_size=%u\n", abstraction_graph_size);
+
+
+		for (int j = 0; j < map[k].size(); ++j) {
+			map[k][j] = g_rng.next32();
+		}
+	}
+
+	printf("abstraction_graph_size = %u\n", abstraction_graph_size);
+
+	exit(0);
+	for (int i = 0; i < map.size(); ++i) {
+		for (int j = 0; j < map[i].size(); ++j) {
+			printf("%u ", map[i][j]);
+		}
+		printf("\n");
+	}
+
+
+}
+
+FeatureBasedStructuredZobristHash::FeatureBasedStructuredZobristHash(
+		const Options &opts) :
+		MapBasedHash(opts) {
+	abstraction = opts.get<double>("abstraction");
+	printf("abstraction = %f\n", abstraction);
+
+	unsigned int whole_variable_space_size = 1;
+	for (int i = 0; i < map.size(); ++i) {
+		whole_variable_space_size += map[i].size();
+	}
+
+	unsigned int abstraction_size = whole_variable_space_size * abstraction;
+	unsigned int current_size = 1;
+
+	// Need to think about seeds later, but for this prototype we put a fixed number.
+	g_rng.seed(717);
+
+	// TODO: read my last stupid code and implement while i know this is suboptimal.
+	for (int i = 0; i < map.size(); ++i) {
+		if (map[i].size() <= 2) {
+			continue;
+		}
+		current_size += map[i].size();
+		if (current_size > abstraction_size) {
+			break;
+		}
+		vector<vector<unsigned int> > structures;
+		divideIntoTwo(i, structures);
+//		printf("structure size=%lu\n", structures.size());
+		for (int j = 0; j < structures.size(); ++j) {
+//			printf("structure[j] size=%lu\n", structures[j].size());
+			unsigned int r = g_rng.next32();
+			for (int k = 0; k < structures[j].size(); ++k) {
+//				printf("%u ", structures[j][k]);
+				map[i][structures[j][k]] = r;
+			}
+//			printf("\n");
+		}
+
+	}
+
+	for (int i = 0; i < map.size(); ++i) {
+		for (int j = 0; j < map[i].size(); ++j) {
+			if (map[i][j] == 0) {
+				map[i][j] = g_rng.next32();
+			}
+		}
+	}
+
+	for (int i = 0; i < map.size(); ++i) {
+		for (int j = 0; j < map[i].size(); ++j) {
+			printf("%u ", map[i][j]);
+		}
+		printf("\n");
+	}
+}
+
 ActionBasedStructuredZobristHash::ActionBasedStructuredZobristHash(
 		const Options &opts) :
 		MapBasedHash(opts) {
+
+	vector<pair<int, const Operator *> > ops;
+
+	g_successor_generator->get_op_depths(0, ops);
+//	g_successor_generator->_dump("");
+
+//	for (int i = 0; i < ops.size(); ++i) {
+//		printf("%d %s\n", ops[i].first, ops[i].second->get_name().c_str());
+//	}
+
+	sort(ops.begin(), ops.end(), &compare_pair<const Operator *>);
 
 	// Need to think about seeds later, but for this prototype we put a fixed number.
 	g_rng.seed(717);
@@ -384,17 +539,18 @@ ActionBasedStructuredZobristHash::ActionBasedStructuredZobristHash(
 	// ad hoc numbers to terminate the algorithm after
 	// structuring all possible actions.
 	unsigned int failed = 0;
-	unsigned int max_failed = 20;
+//	unsigned int max_failed = 60;
 
 	// TODO: KNOWN ISSUE
 	// Add effect and delete effect does not always CHANGE the state.
 	// Therefore, this method does not GUARANTEE to build a structure.
 	// If we could somewhat get around it, we may have a chance to optimize it more.
-	while ((current_size < abstraction_size) && (failed < max_failed)) {
-		unsigned int op_index = g_rng.next32() % g_operators.size();
+	int op_index = 0;
+	while ((current_size < abstraction_size) && (op_index < ops.size())) {
+//		unsigned int op_index = g_rng.next32() % g_operators.size();
 //		printf("op = %d\n", op_index);
-		Operator op = g_operators[op_index];
-
+		Operator op = *(ops[op_index++].second);
+//		printf("op=%s", op.get_name().c_str());
 		vector<pair<int, int> > effects;
 		for (size_t i = 0; i < op.get_pre_post().size(); ++i) {
 			const PrePost &pre_post = op.get_pre_post()[i];
@@ -437,9 +593,9 @@ ActionBasedStructuredZobristHash::ActionBasedStructuredZobristHash(
 			}
 		}
 		if (succeeded) {
-//			printf("succeeded\n");
+//			printf(" succeeded\n");
 		} else {
-//			printf("failed\n");
+//			printf("\n");
 		}
 		if (succeeded) {
 			for (int i = 0; i < effects.size(); ++i) {
@@ -454,6 +610,16 @@ ActionBasedStructuredZobristHash::ActionBasedStructuredZobristHash(
 			++failed;
 		}
 	}
+
+	printf("abst succeeded=%u/%u : %lu\n", current_size, abstraction_size,
+			g_operators.size());
+
+	for (int i = 0; i < map.size(); ++i) {
+		for (int j = 0; j < map[i].size(); ++j) {
+			printf("%u ", map[i][j]);
+		}
+		printf("\n");
+	}
 }
 
 std::string ZobristHash::hash_name() {
@@ -461,6 +627,13 @@ std::string ZobristHash::hash_name() {
 }
 
 std::string AbstractionHash::hash_name() {
+	std::ostringstream os;
+	os << abstraction;
+	std::string str = "abstraction(" + os.str() + ")";
+	return str;
+}
+
+std::string AdaptiveAbstractionHash::hash_name() {
 	std::ostringstream os;
 	os << abstraction;
 	std::string str = "abstraction(" + os.str() + ")";
@@ -494,6 +667,20 @@ static DistributionHash*_parse_zobrist(OptionParser &parser) {
 static DistributionHash*_parse_abstraction(OptionParser &parser) {
 	parser.document_synopsis("AbstractionHash", "Distribution hash for HDA*");
 
+	parser.add_option<int>("abstraction",
+			"The number of keys relative to the whole variable space."
+					"If abst=1, then it is same as ZobristHash.", "5000");
+	Options opts = parser.parse();
+	if (parser.dry_run())
+		return 0;
+	else
+		return new AbstractionHash(opts);
+}
+
+static DistributionHash*_parse_adaptive_abstraction(OptionParser &parser) {
+	parser.document_synopsis("AdaptiveAbstractionHash",
+			"Distribution hash for HDA*");
+
 	parser.add_option<double>("abstraction",
 			"The number of keys relative to the whole variable space."
 					"If abst=1, then it is same as ZobristHash.", "0.3");
@@ -501,7 +688,7 @@ static DistributionHash*_parse_abstraction(OptionParser &parser) {
 	if (parser.dry_run())
 		return 0;
 	else
-		return new AbstractionHash(opts);
+		return new AdaptiveAbstractionHash(opts);
 }
 
 static DistributionHash*_parse_feature_structured_zobrist(
@@ -535,6 +722,8 @@ static DistributionHash*_parse_action_structured_zobrist(OptionParser &parser) {
 static Plugin<DistributionHash> _plugin_zobrist("zobrist", _parse_zobrist);
 static Plugin<DistributionHash> _plugin_abstraction("abstraction",
 		_parse_abstraction);
+static Plugin<DistributionHash> _plugin_adaptive_abstraction("aabstraction",
+		_parse_adaptive_abstraction);
 static Plugin<DistributionHash> _plugin_feature_structured_zobrist(
 		"fstructured", _parse_feature_structured_zobrist);
 static Plugin<DistributionHash> _plugin_action_structured_zobrist("astructured",

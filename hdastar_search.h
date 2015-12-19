@@ -10,6 +10,7 @@
 #include "timer.h"
 #include "evaluator.h"
 #include "search_progress.h"
+#include "wtimer.h"
 
 #include "hash/distribution_hash.h"
 
@@ -50,6 +51,7 @@ class HDAStarSearch: public SearchEngine {
 	int termination_counter;
 	std::pair<unsigned int,int> incumbent_goal_state; // goal state and its cost
 	unsigned char* mpi_buffer; // used for MPI_Buffer_attach.
+	bool self_send;
 
 	unsigned int income_counter;
 	unsigned int incumbent_counter;
@@ -90,6 +92,9 @@ class HDAStarSearch: public SearchEngine {
 	////////////////////////////
 	unsigned int node_sent;
 	unsigned int msg_sent;
+	unsigned int term_msg_sent;
+	WTimer timer;
+	double search_time;
 
 protected:
 	int step();

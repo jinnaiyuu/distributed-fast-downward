@@ -48,6 +48,10 @@ public:
 	unsigned int hash_incremental(const State& state,
 			const unsigned int parent_d_hash, const Operator* op);
 protected:
+	std::vector<int> get_frequency_rank();
+	std::vector<int> reverse_iter_to_val(std::vector<int> in);
+	void divideIntoTwo(unsigned int var,
+			std::vector<std::vector<unsigned int> >& structures);
 	std::vector<std::vector<unsigned int> > map;
 };
 
@@ -64,6 +68,16 @@ public:
 	std::string hash_name();
 
 private:
+	int abstraction;
+};
+
+// Well, let's call it AbstractionHash as Abstraction is way too overloaded.
+class AdaptiveAbstractionHash: public MapBasedHash {
+public:
+	AdaptiveAbstractionHash(const Options &opts);
+	std::string hash_name();
+
+private:
 	double abstraction;
 };
 
@@ -73,8 +87,6 @@ public:
 	std::string hash_name();
 
 private:
-	void divideIntoTwo(unsigned int var,
-			std::vector<std::vector<unsigned int> >& structures);
 	double abstraction;
 
 };

@@ -45,14 +45,13 @@ void SearchEngine::set_plan(const Plan &p) {
 void SearchEngine::search() {
 	initialize();
 	Timer timer;
-	WTimer wall_timer;
+//	WTimer wall_timer;
 	while (step() == IN_PROGRESS)
 		;
 //	cout << "Actual search time: " << timer << endl
 //			<< "Actual search wall time: " << wall_timer << " [t=" << g_timer
 //			<< "]" << endl;
-	printf("Actual search time: %.2f \n"
-			"Actual search wall time: %f [t=%.2f]\n", timer(), wall_timer(), g_timer());
+	printf("Actual search time: %.2f [t=%.2f]\n", timer(), g_timer());
 //	g_timer.stop();
 }
 
