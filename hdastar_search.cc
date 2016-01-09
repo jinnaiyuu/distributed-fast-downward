@@ -59,6 +59,12 @@ HDAStarSearch::HDAStarSearch(const Options &opts) :
 		threshold = 0;
 	}
 
+	if (opts.contains("metis")) {
+		metis = opts.get<bool>("metis");
+	} else {
+		metis = false;
+	}
+
 	if (opts.contains("self_send")) {
 		self_send = opts.get<bool>("self_send");
 	} else {
@@ -162,7 +168,8 @@ void HDAStarSearch::initialize() {
 	printf("node_size = %d\n", node_size);
 
 	// TODO: not sure we need this or Buffer_attach will do that for us.
-	unsigned int buffer_size = (node_size + MPI_BSEND_OVERHEAD) * world_size * 100
+	unsigned int buffer_size = (node_size + MPI_BSEND_OVERHEAD) * world_size
+			* 100
 			+ (node_size * threshold + MPI_BSEND_OVERHEAD) * world_size * 10000;
 	unsigned int buffer_max = 400000000; // 400 MB TODO: not sure this is enough or too much.
 	if (buffer_size > buffer_max) {
@@ -371,6 +378,8 @@ int HDAStarSearch::step() {
 //	if (id == 0) {
 //		dbgprintf ("cc%d\n", 9);
 //	}
+//	printf("h = %lu %u\n", s.get_id().hash() + 1,
+//			distribution_hash_value[s]);
 
 	///////////////////////////////
 	// Expand node
@@ -380,6 +389,10 @@ int HDAStarSearch::step() {
 			calculate_pi();
 		}
 		const Operator *op = applicable_ops[i];
+
+		if ((node.get_real_g() + op->get_cost()) >= incumbent) {
+			continue;
+		}
 
 		unsigned int d_hash = hash->hash_incremental(s,
 				distribution_hash_value[s], op); // TODO: not sure about int <-> uint.
@@ -440,16 +453,24 @@ int HDAStarSearch::step() {
 //			if (id == 0) {
 //				dbgprintf ("cc%d\n", 11);
 //			}
-
-			if ((node.get_real_g() + op->get_cost()) >= incumbent) {
-				continue;
-			}
 			State succ_state = g_state_registry->get_successor_state(s, *op);
 //			search_progress.inc_generated();
 			bool is_preferred = (preferred_ops.find(op) != preferred_ops.end());
 
 			SearchNode succ_node = search_space.get_node(succ_state);
 
+//			printf("metis %lu %lu %u\n", succ_state.get_id().hash() + 1,
+//					s.get_id().hash() + 1, op->get_cost());
+
+			if (metis) {
+				printf("metish %lu %u\n", s.get_id().hash() + 1,
+						distribution_hash_value[s]);
+				printf("metish %lu %u\n", succ_state.get_id().hash() + 1,
+						d_hash);
+
+				printf("metis %lu %lu %u\n", s.get_id().hash() + 1,
+						succ_state.get_id().hash() + 1, op->get_cost());
+			}
 			// same as A*
 
 			if (succ_node.is_new()) {
@@ -1327,6 +1348,9 @@ static SearchEngine *_parse_hdastar(OptionParser &parser) {
 
 	parser.add_option<unsigned int>("threshold",
 			"The number of nodes to queue up in the local outgo_buffer.", "0");
+
+	parser.add_option<bool>("metis", "print lines for sparsity analysis",
+			"false");
 
 	parser.add_option<bool>("self_send",
 			"If true, processes use MPI to send node to myself.", "false");

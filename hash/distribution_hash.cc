@@ -273,7 +273,7 @@ void MapBasedHash::divideIntoTwo(unsigned int var,
 	}
 }
 
-vector<int> MapBasedHash::get_frequency_rank() {
+vector<int> DistributionHash::get_frequency_rank() {
 	// 1.  Count the number of operator which functions the variable.
 	vector<pair<int, int> > n_op_functioning;
 	for (int i = 0; i < g_variable_domain.size(); ++i) {

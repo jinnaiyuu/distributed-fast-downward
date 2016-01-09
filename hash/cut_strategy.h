@@ -41,9 +41,12 @@ public:
 	void cut(unsigned int var, vector<vector<unsigned int> >& structures);
 
 private:
+	void build_transition_matrix();
 	int n_update;
 	Sparsity* sparsity;
 	bool always_cut;
+	string edge_weight;
+	std::vector<std::vector<std::vector<double> > > transitions;
 };
 
 

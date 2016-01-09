@@ -33,6 +33,9 @@ public:
 
 	virtual std::string hash_name() = 0;
 
+protected:
+	std::vector<int> get_frequency_rank();
+
 	// TODO: implement incremental hashing for all those applicable
 //	bool incremental;
 //	virtual unsigned int hash_incremental(const State& state) = 0;
@@ -48,7 +51,6 @@ public:
 	unsigned int hash_incremental(const State& state,
 			const unsigned int parent_d_hash, const Operator* op);
 protected:
-	std::vector<int> get_frequency_rank();
 	std::vector<int> reverse_iter_to_val(std::vector<int> in);
 	void divideIntoTwo(unsigned int var,
 			std::vector<std::vector<unsigned int> >& structures);

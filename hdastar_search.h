@@ -52,6 +52,7 @@ class HDAStarSearch: public SearchEngine {
 	std::pair<unsigned int,int> incumbent_goal_state; // goal state and its cost
 	unsigned char* mpi_buffer; // used for MPI_Buffer_attach.
 	bool self_send;
+	bool metis;
 
 	unsigned int income_counter;
 	unsigned int incumbent_counter;
