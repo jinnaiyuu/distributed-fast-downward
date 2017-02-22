@@ -107,16 +107,16 @@ void RandomUpdating::build_transition_matrix() {
 		cout << "error on building transition matrix" << endl;
 	}
 
-	for (int var = 0; var < g_variable_domain.size(); ++var) {
-		printf("%d: \n", var);
-		for (int i = 0; i < g_variable_domain[var]; ++i) {
-			for (int j = 0; j < g_variable_domain[var]; ++j) {
-				printf("%-5.2f ", transitions[var][i][j]);
-			}
-			printf("\n");
-		}
-		printf("\n");
-	}
+//	for (int var = 0; var < g_variable_domain.size(); ++var) {
+//		printf("%d: \n", var);
+//		for (int i = 0; i < g_variable_domain[var]; ++i) {
+//			for (int j = 0; j < g_variable_domain[var]; ++j) {
+//				printf("%-5.2f ", transitions[var][i][j]);
+//			}
+//			printf("\n");
+//		}
+//		printf("\n");
+//	}
 }
 
 void RandomUpdating::cut(unsigned int var,
@@ -337,6 +337,160 @@ void TwoGroupsAndRest::cut(unsigned int var,
 	}
 }
 
+BranchAndBoundCut::BranchAndBoundCut(const Options &options) :
+		CutStrategy(options) {
+	sparsity = options.get<Sparsity *>("sparsity");
+	build_transition_matrix();
+
+//	sparsity = new CutOverEdgeCostSparsity(options);
+}
+
+void BranchAndBoundCut::cut(unsigned int var,
+		vector<vector<unsigned int> >& structures) {
+	int size = g_variable_domain[var];
+
+	vector<int> tree(size, -1);
+	incumbent = 10000000.0;
+
+	dfs(tree, var);
+
+	double achieved_sparsity = sparsity->calculate_sparsity(transitions[var],
+			incumb_part);
+
+	printf("achieved sparsity = %.2f\n", achieved_sparsity);
+
+	vector<unsigned int> structure0;
+	vector<unsigned int> structure1;
+	for (int i = 0; i < size; ++i) {
+		if (incumb_part[i]) {
+			structure1.push_back(i);
+		} else {
+			structure0.push_back(i);
+		}
+	}
+
+	structures.push_back(structure0);
+	structures.push_back(structure1);
+
+//	for (int i = 0; i < structure0.size(); ++i) {
+//		printf("%d ", i);
+//	}
+//	printf("\n");
+//	for (int i = 0; i < structure1.size(); ++i) {
+//		printf("%d ", i);
+//	}
+//	printf("\n");
+
+}
+
+double BranchAndBoundCut::dfs(vector<int>& tree, unsigned int var) {
+	// yet to reach the end
+	if (std::find(tree.begin(), tree.end(), -1) != tree.end()) {
+		// TODO: this is heuristic method.
+		double spr = sparsity->calculate_upper_bound(transitions[var], tree);
+//		for (int i = 0; i < tree.size(); ++i) {
+//			printf("%d ", tree[i]);
+//		}
+//		printf(": %.2f\n", spr);
+
+		if (spr > incumbent) {
+			return -1.0;
+		} else {
+			vector<int> ztree(tree);
+			vector<int>::iterator i = std::find(ztree.begin(), ztree.end(), -1);
+			*i = 0;
+			double zero = dfs(ztree, var);
+
+//			if (zero < incumbent && zero > 0.0) {
+//				incumbent = zero;
+//			}
+
+			vector<int> otree(tree);
+			vector<int>::iterator j = std::find(otree.begin(), otree.end(), -1);
+			*j = 1;
+			double one = dfs(otree, var);
+
+//			for (int i = 0; i < tree.size(); ++i) {
+//				printf("%d ", tree[i]);
+//			}
+//			printf(": %.2f\n", min(zero, one));
+
+			return min(zero, one);
+		}
+	} else {
+		vector<bool> btree;
+		for (int i = 0; i < tree.size(); ++i) {
+			btree.push_back(tree[i]);
+		}
+		double spr = sparsity->calculate_sparsity(transitions[var], btree);
+
+//		for (int i = 0; i < tree.size(); ++i) {
+//			printf("%d ", tree[i]);
+//		}
+//		printf(": %.2f\n", spr);
+
+		if (spr < incumbent) {
+			incumbent = spr;
+			incumb_part = btree;
+		}
+		return spr;
+	}
+}
+
+void BranchAndBoundCut::build_transition_matrix() {
+	transitions.resize(g_variable_domain.size());
+	for (int var = 0; var < g_variable_domain.size(); ++var) {
+
+//		DomainTransitionGraph* g = g_transition_graphs[var];
+		int size = g_variable_domain[var];
+		std::vector<std::vector<double> > tmatrix; // Edge matrix
+		tmatrix.resize(size);
+		for (int i = 0; i < size; ++i) {
+			tmatrix[i].resize(size, 0.0);
+		}
+		transitions[var] = tmatrix;
+
+	}
+
+	// TODO: duplication of counting for each domain transition graph.
+
+	for (int i = 0; i < g_operators.size(); ++i) {
+		Operator op = g_operators[i];
+		vector<bool> do_change(g_variable_domain.size(), false);
+
+		for (int j = 0; j < op.get_prevail().size(); ++j) {
+			Prevail pv = op.get_prevail()[j];
+			do_change[pv.var] = true;
+			for (int k = 0; k < g_variable_domain[pv.var]; ++k) {
+				++transitions[pv.var][k][pv.prev];
+			}
+		}
+		for (int j = 0; j < op.get_pre_post().size(); ++j) {
+			PrePost pp = op.get_pre_post()[j];
+			do_change[pp.var] = true;
+			if (pp.pre == -1) {
+				for (int k = 0; k < g_variable_domain[pp.var]; ++k) {
+					++transitions[pp.var][k][pp.post];
+				}
+			} else {
+				++transitions[pp.var][pp.pre][pp.post];
+			}
+		}
+
+		// Calculate the number of self loops.
+		// TODO: It may need to be shrank down.
+		for (int j = 0; j < g_variable_domain.size(); ++j) {
+			if (!do_change[j]) {
+				for (int k = 0; k < g_variable_domain[j]; ++k) {
+					++transitions[j][k][k];
+				}
+			}
+		}
+	}
+	// TODO: shrink down diagonal line
+
+}
+
 static CutStrategy* _parse_two_groups_and_rest(OptionParser &parser) {
 	Options opts = parser.parse();
 	if (parser.dry_run())
@@ -366,7 +520,19 @@ static CutStrategy* _parse_random_updating(OptionParser &parser) {
 		return new RandomUpdating(opts);
 }
 
+static CutStrategy* _parse_branch_and_bound(OptionParser &parser) {
+	parser.add_option<Sparsity *>("sparsity",
+			"definition of sparsity, what to minimize", "cut_over_edge_cost");
+	Options opts = parser.parse();
+	if (parser.dry_run())
+		return 0;
+	else
+		return new BranchAndBoundCut(opts);
+}
+
 static Plugin<CutStrategy> _plugin_two_groups_and_rest("two_groups_and_rest",
 		_parse_two_groups_and_rest);
 static Plugin<CutStrategy> _plugin_random_updating("random_updating",
 		_parse_random_updating);
+static Plugin<CutStrategy> _plugin_branch_and_bound("sparsest_cut",
+		_parse_branch_and_bound);

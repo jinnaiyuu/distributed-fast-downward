@@ -24,7 +24,7 @@ FrequentDependentHash::FrequentDependentHash(const Options &opts) :
 	ignore_threshold = opts.get<double>("ignore_threshold");
 	structure_threshold = opts.get<double>("structure_threshold");
 
-	CutStrategy* cut_strategy = opts.get<CutStrategy *>("cut_strategy");
+	CutStrategy* cut_strategy = opts.get<CutStrategy *>("cut");
 
 	// TODO: Implement sparsest cut as a plug-in.
 	// So far we only need a single string for a parameter.
@@ -98,14 +98,17 @@ static DistributionHash* _parse_freq_depend(OptionParser &parser) {
 					" according to the number of operator changing its value.");
 
 	parser.add_option<double>("ignore_threshold",
-			"Ignore variables ranked higher than this threshold.", "0.6");
+			"Ignore variables ranked higher than this threshold.", "0.5");
 
 	parser.add_option<double>("structure_threshold",
 			"Build feature-based structure for varialbe ranked higher than this threshold.",
 			"0.0");
 
-	parser.add_option<CutStrategy *>("cut_strategy",
+	parser.add_option<CutStrategy *>("cut",
 			"Cut method for each domain transition graph", "random_updating");
+
+	parser.add_option<bool>("isPolynomial",
+			"Use polynomial hashing for underlying load balancing scheme.", "false");
 
 	Options opts = parser.parse();
 	if (parser.dry_run())

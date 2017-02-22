@@ -82,6 +82,8 @@ static DistributionHash*_parse_feature_action(OptionParser &parser) {
 	parser.add_option<double>("abstraction",
 			"Ignore variables ranked higher than this threshold.", "0.7");
 
+	parser.add_option<bool>("isPolynomial",
+			"Use polynomial hashing for underlying load balancing scheme.", "false");
 //	parser.add_option<double>("structure_threshold",
 //			"Build feature-based structure for varialbe ranked higher than this threshold.",
 //			"0.3");

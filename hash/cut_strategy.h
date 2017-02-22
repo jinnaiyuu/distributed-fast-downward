@@ -49,5 +49,18 @@ private:
 	std::vector<std::vector<std::vector<double> > > transitions;
 };
 
+class BranchAndBoundCut: public CutStrategy {
+public:
+	BranchAndBoundCut(const Options &options);
+	void cut(unsigned int var, vector<vector<unsigned int> >& structures);
+
+private:
+	double dfs(vector<int>& tree, unsigned int var);
+	void build_transition_matrix();
+	std::vector<std::vector<std::vector<double> > > transitions;
+	Sparsity* sparsity;
+	double incumbent;
+	vector<bool> incumb_part;
+};
 
 #endif /* ZOBRISTHASH_H_ */

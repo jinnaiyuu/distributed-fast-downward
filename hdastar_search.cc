@@ -171,12 +171,18 @@ void HDAStarSearch::initialize() {
 	unsigned int buffer_size = (node_size + MPI_BSEND_OVERHEAD) * world_size
 			* 100
 			+ (node_size * threshold + MPI_BSEND_OVERHEAD) * world_size * 10000;
+
+
 	unsigned int buffer_max = 400000000; // 400 MB TODO: not sure this is enough or too much.
+
+//	printf("buffersize=%u\n", buffer_size,
+//			buffer_size < buffer_max ? buffer_size : buffer_max);
+
 	if (buffer_size > buffer_max) {
 		buffer_size = 400000000;
 	}
 
-	printf("buffersize=%u\n", buffer_size);
+
 	mpi_buffer = new unsigned char[buffer_size];
 	fill(mpi_buffer, mpi_buffer + buffer_size, 0);
 	MPI_Buffer_attach((void *) mpi_buffer, buffer_size);
@@ -208,7 +214,7 @@ void HDAStarSearch::initialize() {
 		}
 	}
 
-	MPI_Barrier(MPI_COMM_WORLD);
+	MPI_Barrier (MPI_COMM_WORLD);
 
 	timer.reset();
 }
@@ -381,6 +387,13 @@ int HDAStarSearch::step() {
 //	printf("h = %lu %u\n", s.get_id().hash() + 1,
 //			distribution_hash_value[s]);
 
+	if (metis) {
+		printf("ms %lu ", s.get_id().hash() + 1);
+		s.dump_raw();
+		printf("mh %lu %u\n", s.get_id().hash() + 1,
+				distribution_hash_value[s]);
+	}
+
 	///////////////////////////////
 	// Expand node
 	///////////////////////////////
@@ -463,13 +476,11 @@ int HDAStarSearch::step() {
 //					s.get_id().hash() + 1, op->get_cost());
 
 			if (metis) {
-				printf("metish %lu %u\n", s.get_id().hash() + 1,
-						distribution_hash_value[s]);
-				printf("metish %lu %u\n", succ_state.get_id().hash() + 1,
-						d_hash);
-
-				printf("metis %lu %lu %u\n", s.get_id().hash() + 1,
-						succ_state.get_id().hash() + 1, op->get_cost());
+				printf("ms %lu ", succ_state.get_id().hash() + 1);
+				succ_state.dump_raw();
+				printf("mh %lu %u\n", succ_state.get_id().hash() + 1, d_hash);
+				printf("m: %lu %lu\n", s.get_id().hash() + 1,
+						succ_state.get_id().hash() + 1); // op->get_cost(): edge cost has nothing to do
 			}
 			// same as A*
 
@@ -929,7 +940,7 @@ bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
 		unsigned char term = 0;
 		unsigned char term2 = 0;
 		MPI_Recv(&term, 1, MPI_BYTE, (id + world_size - 1) % world_size,
-				MPI_MSG_TERM, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		MPI_MSG_TERM, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 //		printf("%d recieved message %d\n", id, term);
 
 		has_received = 0;
@@ -944,7 +955,7 @@ bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
 		// This while loop is here to flush all messages
 		while (has_received) {
 			MPI_Recv(&term2, 1, MPI_BYTE, (id + world_size - 1) % world_size,
-					MPI_MSG_TERM, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			MPI_MSG_TERM, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 			term = (term > term2 ? term : term2);
 			has_received = 0;
 			MPI_Iprobe((id + world_size - 1) % world_size, MPI_MSG_TERM,
@@ -1068,7 +1079,7 @@ int HDAStarSearch::termination() {
 	printf("Actual search wall time: %.2f [t=%.2f]\n", search_time, g_timer());
 
 	printf("barrier %d\n", id);
-	MPI_Barrier(MPI_COMM_WORLD);
+	MPI_Barrier (MPI_COMM_WORLD);
 
 	construct_plan();
 

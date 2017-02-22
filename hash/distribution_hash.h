@@ -55,6 +55,8 @@ protected:
 	void divideIntoTwo(unsigned int var,
 			std::vector<std::vector<unsigned int> >& structures);
 	std::vector<std::vector<unsigned int> > map;
+
+	bool isPolynomial;
 };
 
 class ZobristHash: public MapBasedHash {

@@ -31,6 +31,8 @@ DistributionHash::~DistributionHash() {
 
 MapBasedHash::MapBasedHash(const Options & options) :
 		DistributionHash(options) {
+	isPolynomial = options.get<bool>("isPolynomial");
+
 	// Initialize map with 0 filled.
 	map.resize(g_variable_domain.size());
 	for (int i = 0; i < map.size(); ++i) {
@@ -41,16 +43,39 @@ MapBasedHash::MapBasedHash(const Options & options) :
 
 unsigned int MapBasedHash::hash(const State& state) {
 	unsigned int r = 0;
-	for (int i = 0; i < map.size(); ++i) {
-		r = r ^ map[i][state[i]];
+
+	if (!isPolynomial) {
+		for (int i = 0; i < map.size(); ++i) {
+			r = r ^ map[i][state[i]];
+		}
+	} else {
+		unsigned int last_size = 1;
+		for (int i = 0; i < map.size(); ++i) {
+			if (map[i][0] != 0) {
+				r *= last_size;
+				r += map[i][state[i]];
+				last_size = map[i].size();
+			}
+		}
 	}
 	return r;
 }
 
 unsigned int MapBasedHash::hash(const state_var_t* state) {
 	unsigned int r = 0;
-	for (int i = 0; i < map.size(); ++i) {
-		r = r ^ map[i][state[i]];
+	if (!isPolynomial) {
+		for (int i = 0; i < map.size(); ++i) {
+			r = r ^ map[i][state[i]];
+		}
+	} else {
+		unsigned int last_size = 1;
+		for (int i = 0; i < map.size(); ++i) {
+			if (map[i][0] != 0) {
+				r *= last_size;
+				r += map[i][state[i]];
+				last_size = map[i].size();
+			}
+		}
 	}
 	return r;
 }
@@ -62,14 +87,40 @@ unsigned int MapBasedHash::hash_incremental(const State& parent,
 		const unsigned int parent_d_hash, const Operator* op) {
 	unsigned int ret = parent_d_hash;
 
-	for (size_t i = 0; i < op->get_pre_post().size(); ++i) {
-		const PrePost &pre_post = op->get_pre_post()[i];
-		if (pre_post.does_fire(parent)
-				&& parent[pre_post.var] != pre_post.post) {
-			ret = ret ^ map[pre_post.var][pre_post.post]
-					^ map[pre_post.var][parent[pre_post.var]];
+	if (!isPolynomial) {
+		for (size_t i = 0; i < op->get_pre_post().size(); ++i) {
+			const PrePost &pre_post = op->get_pre_post()[i];
+			if (pre_post.does_fire(parent)
+					&& parent[pre_post.var] != pre_post.post) {
+				ret = ret ^ map[pre_post.var][pre_post.post]
+						^ map[pre_post.var][parent[pre_post.var]];
+			}
+
+		}
+	} else {
+		state_var_t* child;
+		child = new state_var_t[g_variable_domain.size()];
+		for (int i = 0; i < g_variable_domain.size(); ++i) {
+			child[i] = parent[i];
+		}
+		for (size_t i = 0; i < op->get_pre_post().size(); ++i) {
+			const PrePost &pre_post = op->get_pre_post()[i];
+			if (pre_post.does_fire(parent)
+					&& parent[pre_post.var] != pre_post.post) {
+				child[pre_post.var] = pre_post.post;
+			}
 		}
 
+		ret = 0;
+		unsigned int last_size = 1;
+		for (int i = 0; i < map.size(); ++i) {
+			if (map[i][0] != 0) {
+				ret *= last_size;
+				ret += map[i][child[i]];
+				last_size = map[i].size();
+			}
+		}
+		delete child;
 	}
 
 	return ret;
@@ -418,7 +469,6 @@ AdaptiveAbstractionHash::AdaptiveAbstractionHash(const Options &opts) :
 //		printf("current_size=%u\n", current_size);
 //		printf("abstraction_graph_size=%u\n", abstraction_graph_size);
 
-
 		for (int j = 0; j < map[k].size(); ++j) {
 			map[k][j] = g_rng.next32();
 		}
@@ -426,14 +476,13 @@ AdaptiveAbstractionHash::AdaptiveAbstractionHash(const Options &opts) :
 
 	printf("abstraction_graph_size = %u\n", abstraction_graph_size);
 
-	exit(0);
+//	exit(0);
 	for (int i = 0; i < map.size(); ++i) {
 		for (int j = 0; j < map[i].size(); ++j) {
 			printf("%u ", map[i][j]);
 		}
 		printf("\n");
 	}
-
 
 }
 
@@ -657,6 +706,8 @@ std::string ActionBasedStructuredZobristHash::hash_name() {
 static DistributionHash*_parse_zobrist(OptionParser &parser) {
 	parser.document_synopsis("Zobrist Hash", "Distribution hash for HDA*");
 
+	parser.add_option<bool>("isPolynomial",
+			"Use polynomial hashing for underlying load balancing scheme.", "false");
 	Options opts = parser.parse();
 	if (parser.dry_run())
 		return 0;
@@ -670,6 +721,9 @@ static DistributionHash*_parse_abstraction(OptionParser &parser) {
 	parser.add_option<int>("abstraction",
 			"The number of keys relative to the whole variable space."
 					"If abst=1, then it is same as ZobristHash.", "5000");
+
+	parser.add_option<bool>("isPolynomial",
+			"Use polynomial hashing for underlying load balancing scheme.", "false");
 	Options opts = parser.parse();
 	if (parser.dry_run())
 		return 0;
@@ -683,7 +737,9 @@ static DistributionHash*_parse_adaptive_abstraction(OptionParser &parser) {
 
 	parser.add_option<double>("abstraction",
 			"The number of keys relative to the whole variable space."
-					"If abst=1, then it is same as ZobristHash.", "0.3");
+					"If abst=0, then it is same as ZobristHash.", "0.3");
+	parser.add_option<bool>("isPolynomial",
+			"Use polynomial hashing for underlying load balancing scheme.", "false");
 	Options opts = parser.parse();
 	if (parser.dry_run())
 		return 0;
@@ -699,6 +755,8 @@ static DistributionHash*_parse_feature_structured_zobrist(
 	parser.add_option<double>("abstraction",
 			"The number of features to build structure."
 					"If abst=0, then it is same as ZobristHash.", "0.3");
+	parser.add_option<bool>("isPolynomial",
+			"Use polynomial hashing for underlying load balancing scheme.", "false");
 	Options opts = parser.parse();
 	if (parser.dry_run())
 		return 0;
@@ -713,6 +771,8 @@ static DistributionHash*_parse_action_structured_zobrist(OptionParser &parser) {
 	parser.add_option<double>("abstraction",
 			"The maximum ratio of actions to eliminate CO."
 					"If abst=0, then it is same as ZobristHash.", "0.3");
+	parser.add_option<bool>("isPolynomial",
+			"Use polynomial hashing for underlying load balancing scheme.", "false");
 	Options opts = parser.parse();
 	if (parser.dry_run())
 		return 0;
