@@ -16,6 +16,30 @@ State::State(const state_var_t *buffer, const StateRegistry &registry_,
 	assert(id != StateID::no_state);
 }
 
+//// For Symbolic search
+//State::State(const vector<int> & val) {
+//	_allocate();
+//	for (int i = 0; i < val.size(); i++) {
+//		vars[i] = val[i];
+//	}
+//}
+
+//void State::_allocate() {
+//    borrowed_buffer = false;
+//    vars = new state_var_t[g_variable_domain.size()];
+//}
+//
+//void State::_deallocate() {
+//    if (!borrowed_buffer)
+//        delete[] vars;
+//}
+//
+//void State::_copy_buffer_from_state(const State &state) {
+//    // TODO: Profile if memcpy could speed this up significantly,
+//    //       e.g. if we do blind A* search.
+//    for (int i = 0; i < g_variable_domain.size(); i++)
+//        vars[i] = state.vars[i];
+//}
 
 State::~State() {
 }

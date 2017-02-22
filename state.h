@@ -36,7 +36,15 @@ class State {
 
     // No implementation to prevent default construction
     State();
+
+    //Alvaro: added to generate states from bdds
+//    bool borrowed_buffer;
+//    void _allocate();
+//    void _deallocate();
+//    void _copy_buffer_from_state(const State &state);
 public:
+    //Alvaro: added to generate states from bdds
+//    State (const std::vector<int> & val);
     ~State();
 
     StateID get_id() const {
@@ -44,7 +52,7 @@ public:
     }
 
     // yes, this is dangerous but very useful for MPI data transfers
-    const state_var_t* get_raw_data() {
+    const state_var_t* get_raw_data() const {
     	return get_buffer();
     }
 

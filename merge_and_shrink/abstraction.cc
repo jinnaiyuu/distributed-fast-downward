@@ -143,7 +143,7 @@ int Abstraction::get_max_h() const {
 void Abstraction::compute_distances() {
     cout << tag() << flush;
     if (max_h != DISTANCE_UNKNOWN) {
-        cout << "distances already known" << endl;
+//        cout << "distances already known" << endl;
         return;
     }
 
@@ -160,11 +160,11 @@ void Abstraction::compute_distances() {
     init_distances.resize(num_states, infinity);
     goal_distances.resize(num_states, infinity);
     if (is_unit_cost) {
-        cout << "computing distances using unit-cost algorithm" << endl;
+//        cout << "computing distances using unit-cost algorithm" << endl;
         compute_init_distances_unit_cost();
         compute_goal_distances_unit_cost();
     } else {
-        cout << "computing distances using general-cost algorithm" << endl;
+//        cout << "computing distances using general-cost algorithm" << endl;
         compute_init_distances_general_cost();
         compute_goal_distances_general_cost();
     }
@@ -360,7 +360,7 @@ void Abstraction::compute_goal_distances_general_cost() {
 
 void AtomicAbstraction::apply_abstraction_to_lookup_table(const vector<
                                                               AbstractStateRef> &abstraction_mapping) {
-    cout << tag() << "applying abstraction to lookup table" << endl;
+//    cout << tag() << "applying abstraction to lookup table" << endl;
     for (int i = 0; i < lookup_table.size(); i++) {
         AbstractStateRef old_state = lookup_table[i];
         if (old_state != PRUNED_STATE)
@@ -370,7 +370,7 @@ void AtomicAbstraction::apply_abstraction_to_lookup_table(const vector<
 
 void CompositeAbstraction::apply_abstraction_to_lookup_table(const vector<
                                                                  AbstractStateRef> &abstraction_mapping) {
-    cout << tag() << "applying abstraction to lookup table" << endl;
+//    cout << tag() << "applying abstraction to lookup table" << endl;
     for (int i = 0; i < components[0]->size(); i++) {
         for (int j = 0; j < components[1]->size(); j++) {
             AbstractStateRef old_state = lookup_table[i][j];
@@ -385,20 +385,20 @@ void Abstraction::normalize(bool reduce_labels) {
 
     // dump();
 
-    cout << tag() << "normalizing ";
+//    cout << tag() << "normalizing ";
 
     LabelReducer *reducer = 0;
     if (reduce_labels) {
         if (are_labels_reduced) {
-            cout << "without label reduction (already reduced)" << endl;
+//            cout << "without label reduction (already reduced)" << endl;
         } else {
-            cout << "with label reduction" << endl;
+//            cout << "with label reduction" << endl;
             reducer = new LabelReducer(relevant_operators, varset, cost_type);
-            reducer->statistics();
+//            reducer->statistics();
             are_labels_reduced = true;
         }
     } else {
-        cout << "without label reduction" << endl;
+//        cout << "without label reduction" << endl;
     }
 
     typedef vector<pair<AbstractStateRef, int> > StateBucket;
@@ -550,8 +550,8 @@ CompositeAbstraction::CompositeAbstraction(
     bool is_unit_cost, OperatorCost cost_type,
     Abstraction *abs1, Abstraction *abs2)
     : Abstraction(is_unit_cost, cost_type) {
-    cout << "Merging " << abs1->description() << " and "
-         << abs2->description() << endl;
+//    cout << "Merging " << abs1->description() << " and "
+//         << abs2->description() << endl;
 
     assert(abs1->is_solvable() && abs2->is_solvable());
 
@@ -696,8 +696,8 @@ void Abstraction::apply_abstraction(
        right after construction.
      */
 
-    cout << tag() << "applying abstraction (" << size()
-         << " to " << collapsed_groups.size() << " states)" << endl;
+//    cout << tag() << "applying abstraction (" << size()
+//         << " to " << collapsed_groups.size() << " states)" << endl;
 
     typedef slist<AbstractStateRef> Group;
 
