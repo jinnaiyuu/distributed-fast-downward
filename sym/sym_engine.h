@@ -17,64 +17,66 @@ class Options;
 class SymPH;
 class SymBDExp;
 
-class SymEngine : public SearchEngine, public SymController { 
- protected:
-  //unique_ptr<SymVariables> vars; //The symbolic variables are declared here
-  
-  Dir searchDir; //Direction of search in the original state space
-  
-  // List of hierarchy policies to derive new abstractions
-  std::vector <SymPH *> phs;
-    
-  // List of abstract state spaces. We store a list with the unique
-  // pointer so that if we want ever to delete some hNode we just
-  // remove it from this list. TODO: maybe we could use
-  // shared_pointers instead....
-  //std::vector <std::unique_ptr<SymHNode>> nodes;
+class SymEngine: public SearchEngine, public SymController {
+protected:
+	//unique_ptr<SymVariables> vars; //The symbolic variables are declared here
 
-  //Variable to keep the current lower bound. Used to know when we have proven an optimal solution.
-  int lower_bound;
+	Dir searchDir; //Direction of search in the original state space
 
-  //The exploration and state space of the original problem
-  SymHNode * originalStateSpace;
-  SymBDExp * originalSearch;
+	// List of hierarchy policies to derive new abstractions
+	std::vector<SymPH *> phs;
 
-  //Inherited methods
-  virtual void initialize();
-  virtual int step() = 0;
+	// List of abstract state spaces. We store a list with the unique
+	// pointer so that if we want ever to delete some hNode we just
+	// remove it from this list. TODO: maybe we could use
+	// shared_pointers instead....
+	//std::vector <std::unique_ptr<SymHNode>> nodes;
 
-  //Auxiliar method to get the return code for step()
-  int stepReturn() const;
- public:
-  SymEngine(const Options &opts);
-  virtual ~SymEngine(){}
+	//Variable to keep the current lower bound. Used to know when we have proven an optimal solution.
+	int lower_bound;
 
-  void statistics() const;
-  void dump_search_space();
-  virtual void new_solution(const SymSolution & sol);
+	//The exploration and state space of the original problem
+	SymHNode * originalStateSpace;
+	SymBDExp * originalSearch;
 
-  virtual void setLowerBound(int lower){
-    if(lower > lower_bound){
-      lower_bound = lower;
-      std::cout << "BOUND: " << lower_bound << " < " << bound << ", total time: " << g_timer << std::endl;
-    }
-  }
+	//Inherited methods
+	virtual void initialize();
+	virtual int step() = 0;
 
-  virtual int getUpperBound() const{
-    return bound;
-  }
+	//Auxiliar method to get the return code for step()
+	int stepReturn() const;
+public:
+	SymEngine(const Options &opts);
+	virtual ~SymEngine() {
+	}
 
-   virtual int getLowerBound() const{
-    return lower_bound;
-  }
-  virtual bool solved () const {
-    return lower_bound >= bound;
-  }
+	void statistics() const;
+	void dump_search_space();
+	virtual void new_solution(const SymSolution & sol);
 
-  virtual SymBDExp * relax(SymBDExp * exp) const;
+	virtual void setLowerBound(int lower) {
+		if (lower > lower_bound) {
+			lower_bound = lower;
+			std::cout << "BOUND: " << lower_bound << " < " << bound
+					<< ", total time: " << g_timer << std::endl;
+		}
+	}
 
-  static void add_options_to_parser(OptionParser &parser);
-  static void set_default_options(Options & opts);
+	virtual int getUpperBound() const {
+		return bound;
+	}
+
+	virtual int getLowerBound() const {
+		return lower_bound;
+	}
+	virtual bool solved() const {
+		return lower_bound >= bound;
+	}
+
+	virtual SymBDExp * relax(SymBDExp * exp) const;
+
+	static void add_options_to_parser(OptionParser &parser);
+	static void set_default_options(Options & opts);
 };
 
 #endif

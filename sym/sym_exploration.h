@@ -11,6 +11,11 @@
 #include <map>
 #include <memory>
 
+#ifdef __CDT_PARSER__
+#undef DEBUG_MSG
+#define DEBUG_MSG(a) ;
+#endif
+
 /*
  * This class allows to perform a BDD search.  It is designed to
  * mantain the current state in the search.  We consider four
@@ -140,51 +145,50 @@ public:
 	SymExploration& operator=(const SymExploration&) = delete;
 	SymExploration& operator=(SymExploration &&) = default;
 	~SymExploration() {
-		DEBUG_MSG(std::cout << "DELETED EXPLORATION: " << *this << std::endl
-		;
-	);}
+		DEBUG_MSG(std::cout << "DELETED EXPLORATION: " << *this << std::endl ;);
+	}
 
-inline bool finished() const {
-	return open.empty() && !bucketReady();
-}
+	inline bool finished() const {
+		return open.empty() && !bucketReady();
+	}
 
-const std::map<int, Bucket> & getOpen() const {
-	return open;
-}
+	const std::map<int, Bucket> & getOpen() const {
+		return open;
+	}
 
-const std::map<int, Bucket> & getReopen() const {
-	return reopen;
-}
+	const std::map<int, Bucket> & getReopen() const {
+		return reopen;
+	}
 
-bool stepImage() {
-	return stepImage(p.getAllotedTime(nextStepTime()),
-			p.getAllotedNodes(nextStepNodesResult()));
-}
-bool stepImage(int maxTime, int maxNodes);
+	bool stepImage() {
+		return stepImage(p.getAllotedTime(nextStepTime()),
+				p.getAllotedNodes(nextStepNodesResult()));
+	}
+	bool stepImage(int maxTime, int maxNodes);
 
-bool init(SymBDExp * exp, SymManager * manager, bool fw); //Init forward or backward search
+	bool init(SymBDExp * exp, SymManager * manager, bool fw); //Init forward or backward search
 
 //Initialize another search process by reutilizing information of this search
 //calls to 5 methods are needed.
 //1) init(), prepares the data of the other exploration.
-void init(SymBDExp * exp, SymExploration * other);
+	void init(SymBDExp * exp, SymExploration * other);
 //2) init2() reopens closed states in other frontier and initializes g, f
 //Should be called right after init is executed on both frontiers.
-void init2(SymExploration * opposite);
+	void init2(SymExploration * opposite);
 //Then, relaxFrontier only relaxes the first bucket to expand.
 //The caller should check if expansion is feasible and useful
 //Finally, all the open list is relaxed to the new abstract state space
-bool relaxFrontier(SymManager * manager, int maxTime, int maxNodes);
-bool relax(int maxTime, int maxNodes);
-void relaxClosed();
+	bool relaxFrontier(SymManager * manager, int maxTime, int maxNodes);
+	bool relax(int maxTime, int maxNodes);
+	void relaxClosed();
 
-void addHeuristic(const SymHeuristic & heuristic);
-void setPerfectHeuristic(SymClosed * h);
+	void addHeuristic(const SymHeuristic & heuristic);
+	void setPerfectHeuristic(SymClosed * h);
 
 //Adds a new heuristic to evaluate States
-void setChild(SymExploration * child) {
-	closed->addChild(child->getClosed());
-}
+	void setChild(SymExploration * child) {
+		closed->addChild(child->getClosed());
+	}
 
 // void getUsefulExplorations(set <SymExploration *> & explorations, double minRatioUseful);
 
@@ -192,249 +196,258 @@ void setChild(SymExploration * child) {
 
 //void notifyH(SymClosed * heur, int value, bool isNotClosed);
 //void notifyF(SymClosed * heur, int value);
-void notifyPrunedBy(int fVal, int gVal);
-void notify(const Bucket & bucket, int fNotClosed = 0); //May prune
-void notifyNotClosed(int fValue, int hValue);
+	void notifyPrunedBy(int fVal, int gVal);
+	void notify(const Bucket & bucket, int fNotClosed = 0); //May prune
+	void notifyNotClosed(int fValue, int hValue);
 
-void getPossiblyUsefulExplorations(
-		std::vector<SymExploration *> & potentialExps) {
-	perfectHeuristic->potentiallyUsefulFor(this, potentialExps);
-}
-
-bool isBetter(const SymExploration & other) const;
-
-SymExploration * getOpposite() const {
-	if (perfectHeuristic)
-		return perfectHeuristic->getExploration();
-	else
-		return nullptr;
-}
-
-inline bool isSearchable() const {
-	return isSearchableWithNodes(p.maxStepNodes);
-}
-
-inline bool isSearchableAfterRelax(int num_relaxations) const {
-	double maxNodes = p.maxStepNodes;
-	if (num_relaxations) {
-		maxNodes *= pow(p.ratioAfterRelax, num_relaxations);
+	void getPossiblyUsefulExplorations(
+			std::vector<SymExploration *> & potentialExps) {
+		perfectHeuristic->potentiallyUsefulFor(this, potentialExps);
 	}
-	return isSearchableWithNodes((int) maxNodes);
-}
 
-bool isSearchableWithNodes(int maxNodes) const;
+	bool isBetter(const SymExploration & other) const;
 
-inline bool isUseful() {
-	return isUseful(p.ratioUseful);
-}
+	SymExploration * getOpposite() const {
+		if (perfectHeuristic)
+			return perfectHeuristic->getExploration();
+		else
+			return nullptr;
+	}
 
-inline bool isUseful(double ratio) {
-	return !isAbstracted() || closed->isUseful(ratio);
-}
+	inline bool isSearchable() const {
+		return isSearchableWithNodes(p.maxStepNodes);
+	}
 
-double ratioUseful(Bucket & bucket) const;
+	inline bool isSearchableAfterRelax(int num_relaxations) const {
+		double maxNodes = p.maxStepNodes;
+		if (num_relaxations) {
+			maxNodes *= pow(p.ratioAfterRelax, num_relaxations);
+		}
+		return isSearchableWithNodes((int) maxNodes);
+	}
+
+	bool isSearchableWithNodes(int maxNodes) const;
+
+	inline bool isUseful() {
+		return isUseful(p.ratioUseful);
+	}
+
+	inline bool isUseful(double ratio) {
+		return !isAbstracted() || closed->isUseful(ratio);
+	}
+
+	double ratioUseful(Bucket & bucket) const;
 
 // Pointer to the closed list Used to set as heuristic of other explorations.
-inline SymClosed * getClosed() const {
-	return closed.get();
-}
+	inline SymClosed * getClosed() const {
+		return closed.get();
+	}
 
-inline const SymManager * get_mgr() const {
-	return mgr;
-}
+	inline const SymManager * get_mgr() const {
+		return mgr;
+	}
 
-inline SymExploration * getParent() const {
-	return parent;
-}
+	inline SymExploration * getParent() const {
+		return parent;
+	}
 
-inline Bucket getSfilter() const {
-	return Sfilter;
-}
+	inline Bucket getSfilter() const {
+		return Sfilter;
+	}
 
-inline Bucket getSmerge() const {
-	return Smerge;
-}
+	inline Bucket getSmerge() const {
+		return Smerge;
+	}
 
-inline Bucket getSzero() const {
-	return Szero;
-}
+	inline Bucket getSzero() const {
+		return Szero;
+	}
 
-inline Bucket getS() const {
-	return S;
-}
+	inline Bucket getS() const {
+		return S;
+	}
 
-inline int getF() const {
-	return f;
-}
+	inline int getF() const {
+		return f;
+	}
 
-inline int getG() const {
-	return g;
-}
+	inline int getG() const {
+		return g;
+	}
 
-inline bool isFW() const {
-	return fw;
-}
+	inline bool isFW() const {
+		return fw;
+	}
 
-inline bool isAbstracted() const {
-	return mgr->getAbstraction() != nullptr
-			&& mgr->getAbstraction()->isAbstracted();
-}
+	inline bool isAbstracted() const {
+		return mgr->getAbstraction() != nullptr
+				&& mgr->getAbstraction()->isAbstracted();
+	}
 
-SymAbstraction * getAbstraction() const {
-	return mgr->getAbstraction();
+	SymAbstraction * getAbstraction() const {
+		return mgr->getAbstraction();
 
-}
+	}
 
-inline SymBDExp * getBDExp() const {
-	return bdExp;
-}
+	inline SymBDExp * getBDExp() const {
+		return bdExp;
+	}
 
-inline BDD getClosedTotal() {
-	return closed->getClosed();
-}
+	inline BDD getClosedTotal() {
+		return closed->getClosed();
+	}
 
-inline BDD notClosed() {
-	return closed->notClosed();
-}
+	inline BDD notClosed() {
+		return closed->notClosed();
+	}
 
-void desactivate() {
-	closed->desactivate();
-}
+	void desactivate() {
+		closed->desactivate();
+	}
 
-void reactivate() {
-	closed->reactivate();
-}
+	void reactivate() {
+		closed->reactivate();
+	}
 
-long nextStepTime() const;
-long nextStepNodes() const;
-long nextStepNodesResult() const;
+	long nextStepTime() const;
+	long nextStepNodes() const;
+	long nextStepNodesResult() const;
 
 //Returns the nodes that have been expanded by the algorithm (closed without the current frontier)
-BDD getExpanded() const;
-void getNotExpanded(Bucket & res) const;
+	BDD getExpanded() const;
+	void getNotExpanded(Bucket & res) const;
 
-void write(const std::string & file) const;
-void init(SymBDExp * exp, SymManager * manager, const std::string & file);
+	void write(const std::string & file) const;
+	void init(SymBDExp * exp, SymManager * manager, const std::string & file);
 
-inline void removeZero(Bucket & bucket) const {
-	bucket.erase(
-			remove_if(begin(bucket), end(bucket),
-					[] (BDD & bdd) {return bdd.IsZero();}), end(bucket));
-}
+	inline void removeZero(Bucket & bucket) const {
+		bucket.erase(
+				remove_if(begin(bucket), end(bucket),
+						[] (BDD & bdd) {return bdd.IsZero();}),
+				end(bucket));
+	}
 
-inline SymController * getEngine() const {
-	return engine;
-}
+	inline SymController * getEngine() const {
+		return engine;
+	}
+
+	// YJ hash function
+	void init_hashfunction(int np);
+	std::vector<char> get_message_buffer(int i);
 
 private:
 
-inline int nodeCount(const Bucket & bucket) const {
-	int sum = 0;
-	for (const BDD & bdd : bucket) {
-		sum += bdd.nodeCount();
+	std::vector<std::vector<char>> message_buffer;
+
+	inline int nodeCount(const Bucket & bucket) const {
+		int sum = 0;
+		for (const BDD & bdd : bucket) {
+			sum += bdd.nodeCount();
+		}
+		return sum;
 	}
-	return sum;
-}
 
-inline double stateCount(const Bucket & bucket) const {
-	double sum = 0;
-	for (const BDD & bdd : bucket) {
-		sum += mgr->getVars()->numStates(bdd);
+	inline double stateCount(const Bucket & bucket) const {
+		double sum = 0;
+		for (const BDD & bdd : bucket) {
+			sum += mgr->getVars()->numStates(bdd);
+		}
+		return sum;
 	}
-	return sum;
-}
 
-void shrinkBucket(Bucket & bucket, int maxNodes);
+	void shrinkBucket(Bucket & bucket, int maxNodes);
 
-inline void moveBucket(Bucket & bucket, Bucket & res) {
-	copyBucket(bucket, res);
-	Bucket().swap(bucket);
-}
-
-inline void copyBucket(Bucket & bucket, Bucket & res) {
-	if (!bucket.empty()) {
-		res.insert(end(res), begin(bucket), end(bucket));
+	inline void moveBucket(Bucket & bucket, Bucket & res) {
+		copyBucket(bucket, res);
+		Bucket().swap(bucket);
 	}
-}
+
+	inline void copyBucket(Bucket & bucket, Bucket & res) {
+		if (!bucket.empty()) {
+			res.insert(end(res), begin(bucket), end(bucket));
+		}
+	}
 
 //  void addCountStates(SymHeuristic * h, const Bucket & bucket, double & possible, double & total) const;
 
 //BDD closedByParents(const BDD & bdd, SymHeuristic * heur) const;
 //BDD notClosedByParents(const BDD & bdd, SymHeuristic * heur) const;
 
-inline int minG() {
-	int minG = g;
-	/*cout << "MIN_G" << endl;
-	 for (auto & op : open){
-	 cout << op.first << " ";
-	 }
-	 cout << endl;*/
-	if (!open.empty()) {
-		minG = std::min(minG, open.begin()->first);
+	inline int minG() {
+		int minG = g;
+		/*cout << "MIN_G" << endl;
+		 for (auto & op : open){
+		 cout << op.first << " ";
+		 }
+		 cout << endl;*/
+		if (!open.empty()) {
+			minG = std::min(minG, open.begin()->first);
+		}
+		if (!mgr->hasTransitions0()) {
+			//Compute the max to avoid exceed into negative numbers
+			minG = std::max(minG, minG + mgr->getMinTransitionCost());
+		}
+		return minG;
 	}
-	if (!mgr->hasTransitions0()) {
-		//Compute the max to avoid exceed into negative numbers
-		minG = std::max(minG, minG + mgr->getMinTransitionCost());
-	}
-	return minG;
-}
 
-bool mergeBucket(Bucket & bucket, int maxTime, int maxNodes) {
-	auto mergeBDDs = [] (BDD bdd, BDD bdd2, int maxNodes) {
-		return bdd.Or(bdd2, maxNodes);
-	};
-	merge(mgr->getVars(), bucket, mergeBDDs, maxTime,
-			std::min(maxNodes, p.max_disj_nodes));
-	removeZero(bucket); //Be sure that we do not contain only the zero BDD
-	//cout << "BUCKET MERGED TO: " << bucket.size() << endl;
-	return maxNodes >= p.max_disj_nodes || bucket.size() <= 1;
-}
+	bool mergeBucket(Bucket & bucket, int maxTime, int maxNodes) {
+		auto mergeBDDs = [] (BDD bdd, BDD bdd2, int maxNodes) {
+			return bdd.Or(bdd2, maxNodes);
+		};
+		merge(mgr->getVars(), bucket, mergeBDDs, maxTime,
+				std::min(maxNodes, p.max_disj_nodes));
+		removeZero(bucket); //Be sure that we do not contain only the zero BDD
+		//cout << "BUCKET MERGED TO: " << bucket.size() << endl;
+		return maxNodes >= p.max_disj_nodes || bucket.size() <= 1;
+	}
 
 //Extract states with h-value from list, removing duplicates
-void extract_states(Bucket & list, int fVal, int hVal, Bucket & res,
-		bool duplicates);
+	void extract_states(Bucket & list, int fVal, int hVal, Bucket & res,
+			bool duplicates);
 
-bool extract_states(Bucket & list, const Bucket & pruned, Bucket & res) const;
+	bool extract_states(Bucket & list, const Bucket & pruned,
+			Bucket & res) const;
 
 //Extract states without h-value from list using sym heuristic
-/* void extract_states(Bucket & list, int fVal, int hVal, */
-/* 		      Bucket & res, SymClosed * heur);  */
+	/* void extract_states(Bucket & list, int fVal, int hVal, */
+	/* 		      Bucket & res, SymClosed * heur);  */
 
-void setF(int value);
+	void setF(int value);
 
-/* bool stepFDiagonal(int maxTime, int maxNodes); */
-/* bool explore(int maxTime, int maxNodes, */
-/* 	       int maxStepTime, BDD target = BDD(), */
-/* 	       int fTarget = 0, int gTarget = 0); */
+	/* bool stepFDiagonal(int maxTime, int maxNodes); */
+	/* bool explore(int maxTime, int maxNodes, */
+	/* 	       int maxStepTime, BDD target = BDD(), */
+	/* 	       int fTarget = 0, int gTarget = 0); */
 
-/* bool stepExpand(int maxTime, int maxNodes); */
+	/* bool stepExpand(int maxTime, int maxNodes); */
 
-void printFrontier() const;
+	void printFrontier() const;
 
-int frontierNodes() const {
-	if (!Szero.empty()) {
-		return nodeCount(Szero);
-	} else if (!S.empty()) {
-		return nodeCount(S);
-	} else {
-		return nodeCount(Sfilter) + nodeCount(Smerge);
+	int frontierNodes() const {
+		if (!Szero.empty()) {
+			return nodeCount(Szero);
+		} else if (!S.empty()) {
+			return nodeCount(S);
+		} else {
+			return nodeCount(Sfilter) + nodeCount(Smerge);
+		}
 	}
-}
 
-int frontierBuckets() const {
-	if (!Szero.empty()) {
-		return Szero.size();
-	} else if (!S.empty()) {
-		return S.size();
-	} else {
-		return Sfilter.size() + Smerge.size();
+	int frontierBuckets() const {
+		if (!Szero.empty()) {
+			return Szero.size();
+		} else if (!S.empty()) {
+			return S.size();
+		} else {
+			return Sfilter.size() + Smerge.size();
+		}
 	}
-}
 
-void violated(TruncatedReason reason, double time, int maxTime, int maxNodes);
+	void violated(TruncatedReason reason, double time, int maxTime,
+			int maxNodes);
 
-friend std::ostream & operator<<(std::ostream &os,
-		const SymExploration & bdexp);
+	friend std::ostream & operator<<(std::ostream &os,
+			const SymExploration & bdexp);
 };
 #endif // SYMBOLIC_EXPLORATION
 

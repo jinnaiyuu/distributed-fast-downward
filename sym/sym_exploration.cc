@@ -7,11 +7,15 @@
 #include "../globals.h"
 #include "sym_solution.h" 
 #include "sym_engine.h"
+//#include "../cudd-2.5.0/include/dddmp.h"
+
 #include <sstream>
 #include <iostream>
 #include <string>
 #include <fstream>
 #include <string>
+#include <algorithm>
+#include <memory>
 
 #include "test/sym_test.h"
 
@@ -614,6 +618,20 @@ bool SymExploration::expand_zero(int maxTime, int maxNodes) {
 	DEBUG_MSG(cout << "EXPAND ZERO HAS PUT IN Simg: " << Simg.size() << endl ;);
 	Bucket().swap(Szero); //Delete Szero because it has been expanded
 	long nodesRes = 0;
+
+	// TODO: YJ: here we apply hash function to distribute BDDs!
+	for (auto & resimg : Simg) {
+		for (auto bdd : resimg[0]) {
+			std::vector<BDD> partitions;
+			mgr->apply_hash(bdd, partitions);
+			printf("total = %d nodes -> ", bdd.nodeCount());
+			for (int i = 0; i < partitions.size(); ++i) {
+				printf(" %d", partitions[i].nodeCount());
+			}
+			printf("\n");
+		}
+	}
+
 	//Process Simg, removing duplicates and computing h. Store in Sfilter and reopen.
 	for (auto & resimg : Simg) {
 		for (auto bdd : resimg[0]) {
@@ -647,6 +665,7 @@ bool SymExploration::expand_zero(int maxTime, int maxNodes) {
 }
 
 bool SymExploration::expand_cost(int maxTime, int maxNodes) {
+	printf("SymExploratin::expand_cost\n");
 	assert(expansionReady() && nodeCount(S) <= maxNodes);
 	int nodesStep = nodeCount(S);
 	double statesStep = stateCount(S);
@@ -664,6 +683,60 @@ bool SymExploration::expand_cost(int maxTime, int maxNodes) {
 		mgr->unsetTimeLimit();
 		violated(TruncatedReason::IMAGE_COST, image_time(), maxTime, maxNodes);
 		return false;
+	}
+
+	// TODO: YJ: here we apply hash function to distribute BDDs!
+	for (std::map<int, Bucket> & resImage : Simg) {
+		for (auto & pairCostBDDs : resImage) {
+//			int cost = g + pairCostBDDs.first;
+			mergeBucket(pairCostBDDs.second, p.max_pop_time, p.max_pop_nodes);
+			//Check the cut (removing states classified, since they do not need to be included in open)
+//			checkCut(pairCostBDDs.second, cost, false); // TODO: Not sure what this function is doing here.
+
+			for (auto & bdd : pairCostBDDs.second) {
+				std::vector<BDD> partitions;
+				mgr->apply_hash(bdd, partitions);
+				printf("total = %d bdd-nodes.\n", bdd.nodeCount());
+				message_buffer.clear();
+				message_buffer.resize(partitions.size());
+				for (int i = 0; i < partitions.size(); ++i) {
+//					printf(" %d", partitions[i].nodeCount());
+
+//					char buffer[] = "foobar";
+//					int ch;
+//					FILE* bdddata;
+//					char* fname;
+//					bdddata = fmemopen(buffer, strlen(buffer), "w");
+//					Dddmp_cuddBddStore(mgr->mgr(), NULL, partitions[i].getNode(),
+//							NULL, NULL, 0 /*mode*/, DDDMP_VARIDS,
+//							fname, bdddata);
+					// TODO: Currently we are writing on top of external disk.
+					// This should be optimized.
+					string fname = "partition_" + to_string(f) + "_"
+							+ to_string(g) + "_" + to_string(i);
+					partitions[i].write(fname);
+					std::ifstream in(fname, ios::binary);
+					in >> std::noskipws;
+//					std::string contents((std::istreambuf_iterator<char>(in)),
+//							std::istreambuf_iterator<char>());
+//					vector<char> buffer;
+					std::copy(std::istream_iterator<char>(in),
+							std::istream_iterator<char>(),
+							std::back_inserter(message_buffer[i]));
+					in.close();
+
+					//					message_buffer[i] = contents;
+//					MPI_Bsend(contents.c_str(), contents.size(), MPI_BYTE, i,
+//							MPI_MSG_NODE, MPI_COMM_WORLD);
+
+//					BDD reader = mgr->mgr()->read_file(fname);
+//					printf(" %d", reader.nodeCount());
+
+				}
+				printf("\n");
+			}
+
+		}
 	}
 
 	//Include new states in the open list
@@ -711,6 +784,7 @@ bool SymExploration::expand_cost(int maxTime, int maxNodes) {
 }
 
 bool SymExploration::stepImage(int maxTime, int maxNodes) {
+	printf("SymExploratin::stepImage\n");
 	if (mgr->getAbstraction())
 		cout << ">> Step: " << *(mgr->getAbstraction());
 	else
@@ -1233,4 +1307,14 @@ std::ostream & operator<<(std::ostream &os, const TruncatedReason & reason) {
 		cerr << "SymExploration truncated by unkown reason" << endl;
 		exit(-1);
 	}
+}
+
+void SymExploration::init_hashfunction(int np) {
+	mgr->init_hashFunction(np);
+}
+
+// Get message (=BDD) to send to processor i.
+// i should not be the sender itself.
+std::vector<char> SymExploration::get_message_buffer(int i) {
+	return message_buffer[i];
 }

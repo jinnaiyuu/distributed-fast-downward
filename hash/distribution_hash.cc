@@ -31,7 +31,7 @@ DistributionHash::~DistributionHash() {
 
 MapBasedHash::MapBasedHash(const Options & options) :
 		DistributionHash(options) {
-	isPolynomial = options.get<bool>("isPolynomial");
+//	isPolynomial = options.get<bool>("isPolynomial");
 
 	// Initialize map with 0 filled.
 	map.resize(g_variable_domain.size());
@@ -709,6 +709,7 @@ static DistributionHash*_parse_zobrist(OptionParser &parser) {
 	parser.add_option<bool>("isPolynomial",
 			"Use polynomial hashing for underlying load balancing scheme.", "false");
 	Options opts = parser.parse();
+	opts.set("isPolynomial", false);
 	if (parser.dry_run())
 		return 0;
 	else

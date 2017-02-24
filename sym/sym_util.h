@@ -12,6 +12,7 @@
 #include <vector> 
 #include <string> 
 #include <map> 
+//#include "../cudd-2.5.0/include/dddmp.h"
 
 
 bool domain_has_cond_effects();

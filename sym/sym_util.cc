@@ -23,8 +23,8 @@ bool domain_has_cond_effects() {
 	return false;
 }
 
-bool domain_has_axioms(){
-  return (!g_axioms.empty());
+bool domain_has_axioms() {
+	return (!g_axioms.empty());
 }
 
 //bool are_mutex(const pair<int, int> &a, const pair<int, int> &b) {

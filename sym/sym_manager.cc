@@ -281,7 +281,6 @@ void SymManager::dumpMutexBDDs(bool fw) const {
 
 }
 
-
 //TODO: Shrink directly the merged transitions
 const map<int, vector<SymTransition> > & SymManager::getIndividualTRs() {
 	if (indTRs.empty()) {
@@ -491,4 +490,41 @@ int SymManager::filterMutexBucket(vector<BDD> & bucket, bool fw,
 	unsetTimeLimit();
 
 	return numFiltered;
+}
+
+void SymManager::init_hashFunction(int np) {
+	if (hashFunction.size() > 0) {
+		return;
+	}
+	hashFunction.resize(np);
+	int nvars = ceil(log2(np));
+	printf("nvars=%d\n", nvars);
+	for (int i = 0; i < hashFunction.size(); ++i) {
+		BDD r = oneBDD();
+		int rest = i;
+		printf("hash %d: ", i);
+		for (int j = 0; j < nvars; ++j) {
+			bool n = rest % 2;
+			rest = rest / 2;
+			if (n) {
+				printf("%d", j);
+				// BDDvariables are aligned so that every even index represent a variable for precondition.
+				// Thus we need to double j.
+				r = r * vars->bddVar(j * 2);
+			} else {
+				printf("NOT%d", j);
+				r = r * !vars->bddVar(j * 2);
+			}
+		}
+		printf("\n");
+		hashFunction[i] = r;
+	}
+}
+
+void SymManager::apply_hash(const BDD & states, std::vector<BDD> & res) {
+	assert(res.size() == 0);
+	for (int i = 0; i < hashFunction.size(); ++i) {
+		BDD r = hashFunction[i].And(states);
+		res.push_back(r);
+	}
 }

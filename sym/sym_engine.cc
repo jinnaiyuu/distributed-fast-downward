@@ -96,7 +96,7 @@ void SymEngine::add_options_to_parser(OptionParser &parser) {
 	parser.add_enum_option("search_dir", DirValues, "search direction",
 			"BIDIR");
 	parser.add_list_option<SymPH *>("ph",
-			"policies to generate abstractions. None by default.", "[pdbs()]");
+			"policies to generate abstractions. None by default.", "[]");
 //	parser.add_list_option<SymPH *>("ph", vector<SymPH *>(),
 //			"policies to generate abstractions. None by default.");
 }

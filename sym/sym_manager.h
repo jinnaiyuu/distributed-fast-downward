@@ -61,6 +61,12 @@ private:
 	void cost_image(const BDD & bdd, std::map<int, std::vector<BDD> > & res,
 			int maxNodes) const;
 
+	// YJ: for parallel search
+	// hashFunction[i] := BDD which represents h(s) = i.
+	// TODO: Note that this implementation is not optimized.
+	// Dividing TRs for each hash-dif would be more efficient.
+	std::vector<BDD> hashFunction;
+
 public:
 	SymManager(SymManager * mgr, SymAbstraction * abs,
 			const SymParamsMgr & params);
@@ -75,7 +81,7 @@ public:
 
 	void init() {
 		// init_mutex(g_inconsistent_groups);
-//		init_mutex(g_mutex_groups);
+		init_mutex(*g_mutex_groups);
 		init_transitions();
 	}
 
@@ -90,6 +96,11 @@ public:
 	void init_transitions();
 
 	const std::map<int, std::vector<SymTransition> > & getIndividualTRs();
+
+	// YJ: For Parallel BDD-A*
+	void init_hashFunction(int np); // np=number of processes
+	void apply_hash(const BDD & states, std::vector<BDD> & res);
+
 
 	void addDeadEndStates(bool fw, const BDD & bdd) {
 		//There are several options here, we could follow with edeletion
