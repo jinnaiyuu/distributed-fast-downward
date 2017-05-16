@@ -6,3 +6,7 @@ Jinnai Y, Fukunaga A. 2017. On Hash-Based Work Distribution Methods for Parallel
 
 Domain specific solvers (15-puzzle, 24-puzzle, multiple sequence alignment, and grid pathfinding) are available here (https://github.com/jinnaiyuu/pbnf).
 
+
+# LICENSE
+
+The code is published under GPL ver 3.
