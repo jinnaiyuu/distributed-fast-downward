@@ -4,7 +4,7 @@
 #include "sym_engine.h"
 #include "../hash/distribution_hash.h"
 #include <set>
-
+#include <mpi.h>
 class SymExploration;
 class SymHNode;
 
@@ -21,10 +21,15 @@ class SymHDAStar: public SymEngine {
 	 *
 	 */
 	int probe(); // Retrieve messages
+	BDD receive_bdd(MPI_Status& status);
+	void put_in_open(BDD msg);
 	int send();  // Send messages
+	int send_bdd(BDD bdd, int dist);
 	int parition(SymExploration* search);
 	int mpi_initialize(const Options &opts);
 	bool do_probe(); // only run Iprobe every X times;
+	int stepReturn() const;
+	int terminate_detection() const;
 	int id; // MPI_RANK
 	int world_size; // = tnum
 	unsigned int incumbent; // incumbent goal cost

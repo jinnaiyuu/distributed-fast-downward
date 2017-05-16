@@ -200,67 +200,73 @@ void read_variables(istream &in) {
 //	}
 //}
 
-
 void read_mutexes(istream &in) {
-    g_inconsistent_facts.resize(g_variable_domain.size());
-    for (size_t i = 0; i < g_variable_domain.size(); ++i)
-        g_inconsistent_facts[i].resize(g_variable_domain[i]);
+	g_inconsistent_facts.resize(g_variable_domain.size());
+	for (size_t i = 0; i < g_variable_domain.size(); ++i)
+		g_inconsistent_facts[i].resize(g_variable_domain[i]);
 
-    int num_mutex_groups;
-    in >> num_mutex_groups;
+	int num_mutex_groups;
+	in >> num_mutex_groups;
 
-    /* NOTE: Mutex groups can overlap, in which case the same mutex
-       should not be represented multiple times. The current
-       representation takes care of that automatically by using sets.
-       If we ever change this representation, this is something to be
-       aware of. */
+	/* NOTE: Mutex groups can overlap, in which case the same mutex
+	 should not be represented multiple times. The current
+	 representation takes care of that automatically by using sets.
+	 If we ever change this representation, this is something to be
+	 aware of. */
 
-    g_mutex_groups = new vector<MutexGroup>();
+	g_mutex_groups = new vector<MutexGroup>();
 
-    for (size_t i = 0; i < num_mutex_groups; ++i) {
+	for (size_t i = 0; i < num_mutex_groups; ++i) {
 //    	streampos tmp = in.tellg();
 //		MutexGroup mg = MutexGroup(in);
 //		g_mutex_groups->push_back(mg);
 //		in.seekg(tmp, ios_base::beg);
 
-        check_magic(in, "begin_mutex_group");
-        int num_facts;
-        in >> num_facts;
-        vector<pair<int, int> > invariant_group;
-        invariant_group.reserve(num_facts);
-        for (size_t j = 0; j < num_facts; ++j) {
-            int var, val;
-            in >> var >> val;
-            invariant_group.push_back(make_pair(var, val));
-        }
-        check_magic(in, "end_mutex_group");
+		check_magic(in, "begin_mutex_group");
+		string exactly_one_str, dir;
+		int num_facts;
+		in >> exactly_one_str;
+		in >> dir;
+		in >> num_facts;
+		vector<pair<int, int> > invariant_group;
+		invariant_group.reserve(num_facts);
+		for (size_t j = 0; j < num_facts; ++j) {
+			int var, val;
+			in >> var >> val;
+			invariant_group.push_back(make_pair(var, val));
+		}
+		check_magic(in, "end_mutex_group");
 
-        // YJ: Added mutex group here for Symbolic search
-        MutexGroup mg = MutexGroup(invariant_group, num_facts);
-        g_mutex_groups->push_back(mg);
+		// YJ: Added mutex group here for Symbolic search
+		MutexGroup mg = MutexGroup(invariant_group,
+				(exactly_one_str == "exactly_one"), (dir == "fw"));
+		g_mutex_groups->push_back(mg);
+//		MutexGroup mgbw = MutexGroup(invariant_group,
+//				(exactly_one_str == "exactly_one"), (dir != "fw"));
+//		g_mutex_groups->push_back(mgbw);
 
-        for (size_t j = 0; j < invariant_group.size(); ++j) {
-            const pair<int, int> &fact1 = invariant_group[j];
-            int var1 = fact1.first, val1 = fact1.second;
-            for (size_t k = 0; k < invariant_group.size(); ++k) {
-                const pair<int, int> &fact2 = invariant_group[k];
-                int var2 = fact2.first;
-                if (var1 != var2) {
-                    /* The "different variable" test makes sure we
-                       don't mark a fact as mutex with itself
-                       (important for correctness) and don't include
-                       redundant mutexes (important to conserve
-                       memory). Note that the preprocessor removes
-                       mutex groups that contain *only* redundant
-                       mutexes, but it can of course generate mutex
-                       groups which lead to *some* redundant mutexes,
-                       where some but not all facts talk about the
-                       same variable. */
-                    g_inconsistent_facts[var1][val1].insert(fact2);
-                }
-            }
-        }
-    }
+		for (size_t j = 0; j < invariant_group.size(); ++j) {
+			const pair<int, int> &fact1 = invariant_group[j];
+			int var1 = fact1.first, val1 = fact1.second;
+			for (size_t k = 0; k < invariant_group.size(); ++k) {
+				const pair<int, int> &fact2 = invariant_group[k];
+				int var2 = fact2.first;
+				if (var1 != var2) {
+					/* The "different variable" test makes sure we
+					 don't mark a fact as mutex with itself
+					 (important for correctness) and don't include
+					 redundant mutexes (important to conserve
+					 memory). Note that the preprocessor removes
+					 mutex groups that contain *only* redundant
+					 mutexes, but it can of course generate mutex
+					 groups which lead to *some* redundant mutexes,
+					 where some but not all facts talk about the
+					 same variable. */
+					g_inconsistent_facts[var1][val1].insert(fact2);
+				}
+			}
+		}
+	}
 }
 
 void read_goal(istream &in) {

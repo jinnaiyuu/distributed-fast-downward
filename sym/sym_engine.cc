@@ -33,8 +33,11 @@ void SymEngine::initialize() {
 	cout << "Initialize abstraction hierarchy" << endl;
 	originalStateSpace = new SymHNode(this, mgrParams);
 	nodes.push_back(unique_ptr<SymHNode>(originalStateSpace));
+	printf("SymBDExp\n");
 	originalSearch = new SymBDExp(this, searchParams, searchDir);
 	unique_ptr<SymBDExp> refExp(originalSearch);
+
+	printf("SymPH\n");
 
 	vector<SymPH *> tmp;
 	tmp.swap(phs);
@@ -46,6 +49,8 @@ void SymEngine::initialize() {
 		}
 	}
 
+	printf("initFrontier\n");
+
 	if (refExp->initFrontier(originalStateSpace, numeric_limits<int>::max(),
 			numeric_limits<int>::max())
 			&& refExp->initAll(numeric_limits<int>::max(),
@@ -55,6 +60,7 @@ void SymEngine::initialize() {
 		cout << "Init exploration failed" << endl;
 		exit(-1);
 	}
+
 	//hierarchy->init(this, policyHierarchy);
 	//hierarchy->init_exploration(searchDir);
 }

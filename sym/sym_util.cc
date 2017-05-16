@@ -1,4 +1,6 @@
 #include "sym_util.h"
+//#include <stdio.h>
+#include <cstdio>
 using namespace std;
 
 bool domain_has_cond_effects() {
@@ -43,4 +45,47 @@ BDD mergeAndBDD(const BDD & bdd, const BDD & bdd2, int maxSize) {
 }
 BDD mergeOrBDD(const BDD & bdd, const BDD & bdd2, int maxSize) {
 	return bdd.Or(bdd2, maxSize);
+}
+
+// Use it for reading file into char array.
+// Pretty sure it is suboptimal, but for now let's use this simple implementation.
+void file_to_char_array(const std::string filename, char* &array, int& size) {
+	FILE * file = fopen(filename.c_str(), "r+");
+	if (file == NULL)
+		return;
+	fseek(file, 0, SEEK_END);
+	size = ftell(file);
+	char* in = new char[size];
+	int bytes_read = fread(in, sizeof(char), size, file);
+	printf("filetochararray: %d -> %d\n", size, bytes_read);
+	fclose(file);
+	array = in;
+}
+
+void file_to_char_vector(const std::string filename, vector<char>& buffer) {
+	FILE * file = fopen(filename.c_str(), "r+");
+	if (file == NULL)
+		return;
+
+	// 1. read file length
+	fseek(file, 0, SEEK_END);
+	int size = ftell(file);
+	fclose(file);
+	buffer.resize(size);
+
+	// 2. read into
+	file = fopen(filename.c_str(), "r+");
+	int bytes_read = fread(buffer.data(), sizeof(char), size, file);
+	printf("file to char vector: %d -> %d\n", size, bytes_read);
+	fclose(file);
+
+}
+
+void char_vector_to_file(const std::string filename, vector<char>& buffer) {
+	FILE* file = fopen(filename.c_str(), "w+");
+	int bytes_written = fwrite(buffer.data(), sizeof(unsigned char),
+			buffer.size(), file);
+	printf("charvectortofile: %d -> %d\n", (int) buffer.size(), bytes_written);
+	fclose(file);
+	return;
 }

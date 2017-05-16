@@ -130,6 +130,10 @@ class SymExploration {
 	/* Insert successors on open.  */
 	bool expand_cost(int maxTime, int maxNodes);
 
+	bool expand_zero_parallel(int maxTime, int maxNodes);
+	bool expand_cost_parallel(int maxTime, int maxNodes);
+
+
 	// Returns the subset with h_value h
 	BDD compute_heuristic(const BDD & from, int fVal, int hVal);
 
@@ -333,11 +337,13 @@ public:
 
 	// YJ hash function
 	void init_hashfunction(int np);
-	std::vector<char> get_message_buffer(int i);
+	BDD get_message_buffer(int i);
 
 private:
 
-	std::vector<std::vector<char>> message_buffer;
+	// YJ: for HDSA*
+	bool parallel; // true if were running it parallel
+	std::vector<BDD> message_buffer;
 
 	inline int nodeCount(const Bucket & bucket) const {
 		int sum = 0;

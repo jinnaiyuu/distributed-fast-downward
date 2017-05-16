@@ -7,7 +7,14 @@ using namespace std;
 MutexGroup::MutexGroup(vector<pair<int, int> > invariant_group, int num_facts) {
 	this->facts = invariant_group;
 	this->detected_fw = false; // TODO: how is it used?
-	this->exactly_one = (num_facts == 1);
+	this->exactly_one = false; // not sure how to use it.
+}
+
+MutexGroup::MutexGroup(vector<pair<int, int> > invariant_group,
+		bool exactly_one_str, bool dir) {
+	this->facts = invariant_group;
+	exactly_one = exactly_one_str;
+	detected_fw = dir;
 }
 
 MutexGroup::MutexGroup(istream &in) {
@@ -27,6 +34,9 @@ MutexGroup::MutexGroup(istream &in) {
 	check_magic(in, "end_mutex_group");
 	exactly_one = (exactly_one_str == "exactly_one");
 	detected_fw = (dir == "fw");
+	// TODO: not sure what those are used for.
+//	exactly_one = false;
+//	detected_fw = true;
 }
 
 bool MutexGroup::hasPair(int var, int val) const {

@@ -899,7 +899,8 @@ StateID HDAStarSearch::bytes_to_node(unsigned char* d) {
 }
 
 // Mattern, Algorithm for distributed termination detection, 1987
-// TODO: this is correct, but not efficient
+// TODO: I decided to implement simple two-round algorithm, as it won't be the bottleneck.
+//       It is correct, but not efficient
 bool HDAStarSearch::termination_detection(bool& has_sent_first_term) {
 	MPI_Status status;
 	int has_received = 0;

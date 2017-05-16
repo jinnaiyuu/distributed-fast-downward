@@ -66,6 +66,7 @@ private:
 	// TODO: Note that this implementation is not optimized.
 	// Dividing TRs for each hash-dif would be more efficient.
 	std::vector<BDD> hashFunction;
+	std::vector<std::map<int, std::vector<SymTransition> > > hashed_transitions;
 
 public:
 	SymManager(SymManager * mgr, SymAbstraction * abs,
@@ -82,7 +83,9 @@ public:
 	void init() {
 		// init_mutex(g_inconsistent_groups);
 		init_mutex(*g_mutex_groups);
+		printf("init_mutex\n");
 		init_transitions();
+		printf("init_transitions\n");
 	}
 
 	//Be careful of calling init_mutex and init_transitions before actually calling filter_mutex or image
@@ -100,7 +103,7 @@ public:
 	// YJ: For Parallel BDD-A*
 	void init_hashFunction(int np); // np=number of processes
 	void apply_hash(const BDD & states, std::vector<BDD> & res);
-
+	void generate_hashed_transitions(); // Prehash the transitions.
 
 	void addDeadEndStates(bool fw, const BDD & bdd) {
 		//There are several options here, we could follow with edeletion
@@ -263,8 +266,8 @@ public:
 	BDD filter_mutex(const BDD & bdd, bool fw, int maxNodes,
 			bool initialization);
 
-	int filterMutexBucket(std::vector<BDD> & bucket, bool fw, bool initialization,
-			int maxTime, int maxNodes);
+	int filterMutexBucket(std::vector<BDD> & bucket, bool fw,
+			bool initialization, int maxTime, int maxNodes);
 
 	inline void setTimeLimit(int maxTime) {
 		vars->setTimeLimit(maxTime);

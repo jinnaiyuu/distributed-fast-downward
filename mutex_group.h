@@ -11,6 +11,10 @@ class MutexGroup {
 public:
 	MutexGroup(std::vector<std::pair<int, int> > invariant_group,
 			int num_facts);
+	MutexGroup(std::vector<std::pair<int, int> > invariant_group,
+			bool exactly_one_str, bool dir);
+//	MutexGroup(std::vector<std::pair<int, int> > invariant_group,
+//			std::string exactly_one_str, std::string dir);
 	MutexGroup(std::istream &in);
 
 	void dump() const;

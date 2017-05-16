@@ -32,7 +32,7 @@ SymExploration::SymExploration(SymController * eng,
 				new SymClosed()), f(0), g(0), perfectHeuristic(nullptr), estimationCost(
 				params), estimationZero(params),
 		//estimationDisjCost(params), estimationDisjZero(params),
-		lastStepCost(true), engine(eng) {
+		lastStepCost(true), engine(eng), parallel(false) {
 }
 
 bool SymExploration::init(SymBDExp * exp, SymManager * manager, bool forward) {
@@ -44,6 +44,7 @@ bool SymExploration::init(SymBDExp * exp, SymManager * manager, bool forward) {
 	g = 0;
 	//Ensure that the mgr of the original state space is initialized (only to get the planner output cleaner)
 	mgr->init();
+	printf("mgr->init() done\n");
 
 	DEBUG_MSG(cout << "Init exploration: " << dirname(forward) << *this
 	/* << " with mgr: " << manager */<< endl ;);
@@ -54,7 +55,7 @@ bool SymExploration::init(SymBDExp * exp, SymManager * manager, bool forward) {
 	} else {
 		Sfilter.push_back(mgr->getGoal());
 	}DEBUG_MSG(
-			cout << dirname(forward) << " initialized to "; Sfilter[0].print(0,1); cout << "Init closed" << endl;);
+			cout << dirname(forward) << " initialized to "; ; cout << "Init closed" << endl;);
 
 	closed->init(this, mgr);
 	if (!mgr->hasTransitions0()) {
@@ -76,7 +77,7 @@ bool SymExploration::init(SymBDExp * exp, SymManager * manager, bool forward) {
 
 	if (!isAbstracted())
 		engine->setLowerBound(f);
-
+	printf("XXXXXXXX\n");
 	return true;
 }
 
@@ -586,6 +587,140 @@ bool SymExploration::prepareBucket() {
 
 bool SymExploration::expand_zero(int maxTime, int maxNodes) {
 	//Image with respect to 0-cost actions
+	printf("SymExploration::expand_zero\n");
+	assert(expansionReady() && nodeCount(Szero) <= maxNodes);
+	// DEBUG_MSG(cout << "    >> Truncated. 0-Frontier size exceeded: " << nodeCount(Szero) << endl;);
+	// estimationZero.violated_nodes(nodeCount(Szero));
+	// return false;
+
+	Timer image_time;
+
+	int nodesStep = nodeCount(Szero);
+	double statesStep = stateCount(Szero);
+	mgr->setTimeLimit(maxTime);
+	//Compute image, storing the result on Simg
+	try {
+		int numImagesComputed = 0;
+		for (int i = 0; i < Szero.size(); i++) {
+			Simg.push_back(map<int, Bucket>());
+			mgr->zero_image(fw, Szero[i], Simg[i][0], maxNodes);
+			DEBUG_MSG(
+					for (auto bdd : Simg[i][0]) { cout << "RESULT OF ZERO_IMG: " ; bdd.print(0, 1) ; });
+			++numImagesComputed;
+		}
+		mgr->unsetTimeLimit();
+	} catch (BDDError e) {
+		mgr->unsetTimeLimit();
+		violated(TruncatedReason::IMAGE_ZERO, image_time(), maxTime, maxNodes);
+		// Szero.erase(begin(Szero), begin(Szero) + numImagesComputed);
+		return false;
+	}
+	lastStepCost = false; //Must be set to false before calling checkCut
+
+	DEBUG_MSG(cout << "EXPAND ZERO HAS PUT IN Simg: " << Simg.size() << endl ;);
+	Bucket().swap(Szero); //Delete Szero because it has been expanded
+	long nodesRes = 0;
+
+	//Process Simg, removing duplicates and computing h. Store in Sfilter and reopen.
+	for (auto & resimg : Simg) {
+		for (auto bdd : resimg[0]) {
+			nodesRes = max<long>(nodesRes, bdd.nodeCount());
+#ifdef DEBUG_GST
+			gst_plan.checkOpen(bdd, g, this);
+#endif
+		}
+		if (perfectHeuristic)
+			perfectHeuristic->cleanEvals(this);
+		extract_states(resimg[0], f, f - g, Sfilter, true);
+		//Those states that were not extracted are not closed and should be put on open
+		if (!resimg[0].empty()) {
+			open[g].insert(end(open[g]), begin(resimg[0]), end(resimg[0]));
+		}
+		//    reopen[g].insert(end(reopen[g]), begin(resimg[0]), end(resimg[0]));
+	}
+
+	vector<map<int, Bucket>>().swap(Simg);
+	DEBUG_MSG(cout << "EST_ZERO " << image_time() << "   " ;);
+	estimationZero.stepTaken(1000 * image_time(),
+			max<long>(nodesRes, nodesStep));
+
+	//Try to prepare next Bucket
+	computeEstimation(true);
+
+	DEBUG_MSG(
+			cout << "  >> 0-cost step " << (fw ? " fw " : " bw ") << ": " << nodesStep << " nodes " << statesStep << " states " << " done in " << image_time << endl ;);DEBUG_MSG(
+			cout << " res: " << Sfilter.size() << endl; cout << "Prepared in Sfilter: " << Sfilter.size() << endl;);
+	return true;
+}
+
+bool SymExploration::expand_cost(int maxTime, int maxNodes) {
+	printf("SymExploration::expand_cost\n");
+	assert(expansionReady() && nodeCount(S) <= maxNodes);
+	int nodesStep = nodeCount(S);
+	double statesStep = stateCount(S);
+	Timer image_time;
+	DEBUG_MSG(cout << "Setting maxTime: " << maxTime << endl ;);
+	mgr->setTimeLimit(maxTime);
+	try {
+		for (int i = 0; i < S.size(); i++) {
+			Simg.push_back(map<int, Bucket>());
+			mgr->cost_image(fw, S[i], Simg[i], maxNodes);
+		}
+		mgr->unsetTimeLimit();
+	} catch (BDDError e) {
+		//Update estimation
+		mgr->unsetTimeLimit();
+		violated(TruncatedReason::IMAGE_COST, image_time(), maxTime, maxNodes);
+		return false;
+	}
+
+	//Include new states in the open list
+	int stepNodes = nodesStep;
+	for (auto & resImage : Simg) {
+		for (auto & pairCostBDDs : resImage) {
+			int cost = g + pairCostBDDs.first; //Include states of the given cost
+			mergeBucket(pairCostBDDs.second, p.max_pop_time, p.max_pop_nodes);
+
+			//Check the cut (removing states classified, since they do not need to be included in open)
+			checkCut(pairCostBDDs.second, cost, false);
+
+			for (auto & bdd : pairCostBDDs.second) {
+				if (!bdd.IsZero()) {
+					//TODO: maybe we can also use the heuristics to prune states
+					//right here. Also, we could prune duplicates. Not sure if it
+					//is worth it.
+					int fVal = cost;
+					if (perfectHeuristic) {
+						fVal += perfectHeuristic->getHNotClosed();
+					}
+					if (fVal < engine->getUpperBound()) {
+						if (!open.count(cost)) {
+							open[cost] = vector<BDD>();
+						}
+						stepNodes = max(stepNodes, bdd.nodeCount());
+#ifdef DEBUG_GST
+						gst_plan.checkOpen(bdd, cost, this);
+#endif
+						open[cost].push_back(bdd);
+					}
+				}
+			}
+		}
+	}
+	vector<map<int, Bucket>>().swap(Simg);
+	Bucket().swap(S);
+	DEBUG_MSG(cout << "EST_COST " << image_time() << "   " << endl ;);
+	estimationCost.stepTaken(1000 * image_time(), stepNodes);
+	lastStepCost = true;
+
+	DEBUG_MSG(
+			cout << "  >> cost step" << (fw ? " fw " : " bw ") << ": " << nodesStep << " nodes " << statesStep << " states " << " done in " << image_time << " total time: " << g_timer << endl ;);
+	return true;
+}
+
+bool SymExploration::expand_zero_parallel(int maxTime, int maxNodes) {
+	//Image with respect to 0-cost actions
+	printf("SymExploration::expand_zero_parallel\n");
 	assert(expansionReady() && nodeCount(Szero) <= maxNodes);
 	// DEBUG_MSG(cout << "    >> Truncated. 0-Frontier size exceeded: " << nodeCount(Szero) << endl;);
 	// estimationZero.violated_nodes(nodeCount(Szero));
@@ -664,8 +799,8 @@ bool SymExploration::expand_zero(int maxTime, int maxNodes) {
 	return true;
 }
 
-bool SymExploration::expand_cost(int maxTime, int maxNodes) {
-	printf("SymExploratin::expand_cost\n");
+bool SymExploration::expand_cost_parallel(int maxTime, int maxNodes) {
+	printf("SymExploration::expand_cost_parallel\n");
 	assert(expansionReady() && nodeCount(S) <= maxNodes);
 	int nodesStep = nodeCount(S);
 	double statesStep = stateCount(S);
@@ -685,7 +820,6 @@ bool SymExploration::expand_cost(int maxTime, int maxNodes) {
 		return false;
 	}
 
-	// TODO: YJ: here we apply hash function to distribute BDDs!
 	for (std::map<int, Bucket> & resImage : Simg) {
 		for (auto & pairCostBDDs : resImage) {
 //			int cost = g + pairCostBDDs.first;
@@ -697,43 +831,7 @@ bool SymExploration::expand_cost(int maxTime, int maxNodes) {
 				std::vector<BDD> partitions;
 				mgr->apply_hash(bdd, partitions);
 				printf("total = %d bdd-nodes.\n", bdd.nodeCount());
-				message_buffer.clear();
-				message_buffer.resize(partitions.size());
-				for (int i = 0; i < partitions.size(); ++i) {
-//					printf(" %d", partitions[i].nodeCount());
-
-//					char buffer[] = "foobar";
-//					int ch;
-//					FILE* bdddata;
-//					char* fname;
-//					bdddata = fmemopen(buffer, strlen(buffer), "w");
-//					Dddmp_cuddBddStore(mgr->mgr(), NULL, partitions[i].getNode(),
-//							NULL, NULL, 0 /*mode*/, DDDMP_VARIDS,
-//							fname, bdddata);
-					// TODO: Currently we are writing on top of external disk.
-					// This should be optimized.
-					string fname = "partition_" + to_string(f) + "_"
-							+ to_string(g) + "_" + to_string(i);
-					partitions[i].write(fname);
-					std::ifstream in(fname, ios::binary);
-					in >> std::noskipws;
-//					std::string contents((std::istreambuf_iterator<char>(in)),
-//							std::istreambuf_iterator<char>());
-//					vector<char> buffer;
-					std::copy(std::istream_iterator<char>(in),
-							std::istream_iterator<char>(),
-							std::back_inserter(message_buffer[i]));
-					in.close();
-
-					//					message_buffer[i] = contents;
-//					MPI_Bsend(contents.c_str(), contents.size(), MPI_BYTE, i,
-//							MPI_MSG_NODE, MPI_COMM_WORLD);
-
-//					BDD reader = mgr->mgr()->read_file(fname);
-//					printf(" %d", reader.nodeCount());
-
-				}
-				printf("\n");
+				message_buffer = partitions;
 			}
 
 		}
@@ -817,14 +915,36 @@ bool SymExploration::stepImage(int maxTime, int maxNodes) {
 	bool ok = true;
 	mgr->init_transitions(); //Ensure that transitions have been initialized
 	int stepNodes = frontierNodes();
-	if (!Szero.empty()) {
-		ok = expand_zero(maxTime, maxNodes);
-	} else if (!S.empty()) {
-		//Image with respect to cost actions
-		ok = expand_cost(maxTime, maxNodes);
+//	if (parallel) {
+//		printf("parallel\n");
+//	} else {
+//		printf("not parallel\n");
+//	}
+//	if (!isAbstracted()) {
+//		printf("isAbstracted\n");
+//	} else {
+//		printf("not isAbstracted\n");
+//	}
+	if (parallel && !isAbstracted()) {
+		if (!Szero.empty()) {
+			ok = expand_zero_parallel(maxTime, maxNodes);
+		} else if (!S.empty()) {
+			//Image with respect to cost actions
+			ok = expand_cost_parallel(maxTime, maxNodes);
+		} else {
+			DEBUG_MSG(
+					cout << "   >> All pop states were filtered: " << open.empty() << endl ;);
+		}
 	} else {
-		DEBUG_MSG(
-				cout << "   >> All pop states were filtered: " << open.empty() << endl ;);
+		if (!Szero.empty()) {
+			ok = expand_zero(maxTime, maxNodes);
+		} else if (!S.empty()) {
+			//Image with respect to cost actions
+			ok = expand_cost(maxTime, maxNodes);
+		} else {
+			DEBUG_MSG(
+					cout << "   >> All pop states were filtered: " << open.empty() << endl ;);
+		}
 	}
 
 	pop(); //We prepare the next bucket before checking time in doing
@@ -1310,11 +1430,13 @@ std::ostream & operator<<(std::ostream &os, const TruncatedReason & reason) {
 }
 
 void SymExploration::init_hashfunction(int np) {
+	printf("SymExploration::init_hashfunction\n");
 	mgr->init_hashFunction(np);
+	parallel = true;
 }
 
 // Get message (=BDD) to send to processor i.
 // i should not be the sender itself.
-std::vector<char> SymExploration::get_message_buffer(int i) {
+BDD SymExploration::get_message_buffer(int i) {
 	return message_buffer[i];
 }

@@ -73,12 +73,14 @@ bool SymBDExp::initFrontier(SymHNode * node, int maxTime, int maxNodes) {
 	hnode = node;
 	if (!parent) { //Init of new search
 		bool init_fw = fw->init(this, hnode->getManager(), true);
+		printf("init_fw\n");
 		bool init_bw = bw->init(this, hnode->getManager(), false);
-
+		printf("init_fwbw\n");
 		fw->setPerfectHeuristic(bw->getClosed());
 		bw->setPerfectHeuristic(fw->getClosed());
 		DEBUG_MSG(
 				cout << "Initialized " << fw.get() << " and " << bw.get() << endl;);
+		printf("setHeuristic\n");
 
 		//Consider correctly initialized if one has been initialized
 		return (searchDir != Dir::BW && init_fw)

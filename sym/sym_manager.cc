@@ -66,7 +66,9 @@ void SymManager::init_states() {
 		DEBUG_MSG(cout << "INIT STATES NO ABS" << endl ;);
 		initialState = vars->getStateBDD(g_initial_state());
 		goal = vars->getPartialStateBDD(g_goal);
+		initialState.print(0, 1);
 	}DEBUG_MSG(cout << "INIT STATES DONE" << endl ;);
+	printf("initState %d\n", initialState.nodeCount());
 }
 
 //TODO: WARNING INIT_MUTEX with abstractions could be better.
@@ -111,7 +113,7 @@ void SymManager::init_mutex(const std::vector<MutexGroup> & mutex_groups) {
 
 void SymManager::init_mutex(const std::vector<MutexGroup> & mutex_groups,
 		bool genMutexBDD, bool genMutexBDDByFluent) {
-
+//	DEBUG_MSG(printf("SymManager::init_mutex\n"););
 //Check if I should initialize something and return
 	if (mutexInitialized)
 		genMutexBDD = false;
@@ -326,7 +328,7 @@ const map<int, vector<SymTransition> > & SymManager::getIndividualTRs() {
 				}
 			}
 		}
-	}
+	}DEBUG_MSG(printf("SymManager::getIndividualTRs done\n"););
 	return indTRs;
 }
 
@@ -528,3 +530,20 @@ void SymManager::apply_hash(const BDD & states, std::vector<BDD> & res) {
 		res.push_back(r);
 	}
 }
+
+// We can pre-hash transitions.
+// Trans(p, p', w, x, x') = Trans(w, x, x') and Hash(p, x) and Hash(p', x')
+void SymManager::generate_hashed_transitions() {
+	printf("Not implemented yet/n");
+//	hashed_transitions.resize(hashFunction.size());
+//	for (int i = 0; i < hashFunction.size(); ++i) {
+//		for (map<int, vector<SymTransition> >::iterator it =
+//				transitions.begin(); it != transitions.end(); ++it) {
+//			for (vector<SymTransition>::iterator itt = it->second.begin();
+//					itt != it->second.end(); ++itt) {
+//
+//			}
+//		}
+//	}
+}
+

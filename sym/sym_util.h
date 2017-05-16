@@ -19,6 +19,10 @@ bool domain_has_cond_effects();
 
 bool domain_has_axioms();
 
+void file_to_char_array(const std::string filename, char* &array, int& size);
+void file_to_char_vector(const std::string filename, std::vector<char>& buffer);
+
+void char_vector_to_file(const std::string filename, std::vector<char>& buffer);
 
 template<class T>
 T getData(std::string line, const std::string & separator,

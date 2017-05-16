@@ -19,6 +19,7 @@ SymTransition::SymTransition(SymVariables * sVars, const Operator * op,
 		sV(sVars), cost(cost_), tBDD(sVars->oneBDD()), existsVars(
 				sVars->oneBDD()), existsBwVars(sVars->oneBDD()), absAfterImage(
 				nullptr) {
+	DEBUG_MSG(printf("SymTransition::SymTransition\n"););
 
 	ops.insert(op);
 	for (int i = 0; i < op->get_prevail().size(); i++) { //Put precondition of label
@@ -57,6 +58,8 @@ SymTransition::SymTransition(SymVariables * sVars, const Operator * op,
 		}
 	}
 
+//	DEBUG_MSG(printf("SymTransition::SymTransition: precond done\n"););
+
 	//Add effects to the tBDD
 	for (auto it = effects.rbegin(); it != effects.rend(); ++it) {
 		int var = it->first;
@@ -74,6 +77,9 @@ SymTransition::SymTransition(SymVariables * sVars, const Operator * op,
 		//exit(0);
 	}
 
+//	DEBUG_MSG(printf("SymTransition::SymTransition: effect done\n"););
+
+
 	sort(effVars.begin(), effVars.end());
 	for (int var : effVars) {
 		for (int bdd_var : sV->vars_index_pre(var)) {
@@ -89,6 +95,8 @@ SymTransition::SymTransition(SymVariables * sVars, const Operator * op,
 		existsVars *= swapVarsS[i];
 		existsBwVars *= swapVarsSp[i];
 	}
+//	DEBUG_MSG(printf("SymTransition::SymTransition: swapVars\n"););
+
 	//DEBUG_MSG(cout << "Computing tr took " << tr_timer; tBDD.print(1, 1););
 }
 
@@ -395,6 +403,7 @@ void SymTransition::merge(const SymTransition & t2, int maxNodes) {
 // }
 
 void SymTransition::edeletion(SymManager & mgr) {
+//	DEBUG_MSG(printf("SymTransition::edeletion\n"););
 	if (ops.size() != 1) {
 		cerr
 				<< "Error, trying to apply edeletion over a transition with more than one op"
@@ -410,18 +419,22 @@ void SymTransition::edeletion(SymManager & mgr) {
 				//We have a post effect over this variable.
 				//That means that every previous value is possible
 				//for each value of the variable
+//				DEBUG_MSG(printf("edeletion: pp.pre\n"););
 				for (int val = 0; val < g_variable_domain[pp.var]; val++) {
 					tBDD *= mgr.getNotMutexBDDBw(pp.var, val);
 				}
 			} else {
+//				DEBUG_MSG(printf("edeletion: else\n"););
 				//In regression, we are making true pp.pre
 				//So we must negate everything of these.
 				tBDD *= mgr.getNotMutexBDDBw(pp.var, pp.pre);
 			}
+//			DEBUG_MSG(printf("edeletion: forward\n"););
 			//edeletion fw
 			tBDD *= mgr.getNotMutexBDDFw(pp.var, pp.post).SwapVariables(
 					swapVarsS, swapVarsSp);
 
+//			DEBUG_MSG(printf("edeletion: invariants\n"););
 			//edeletion invariants
 			tBDD *= mgr.getExactlyOneBDD(pp.var, pp.post);
 		}
