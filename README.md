@@ -1,14 +1,8 @@
-fast-downward
-=============
-
-Expansions for fast-downward. (ex. heuristics, search engines)
-
-1. jinnai_heuristic
-
-Domain specific heuristic for Gripper.
-
-It implements the Almost Perfect Heuristics, examined in Malte Helmert and Gabriele Roger, 2008, How Good is Almost Perfect?
+Parallel best-first search algorithms for classical planning.
 
 
+# Hash Distributed A*
+Jinnai Y, Fukunaga A. 2017. On Hash-Based Work Distribution Methods for Parallel Best-First Search. Journal of Artificial Intelligence Research (JAIR). To appear.
 
-Takes a single int argument(c) and returns h* + c. (h* is the perfect heuristic for Gripper.)
+Domain specific solvers (15-puzzle, 24-puzzle, multiple sequence alignment, and grid pathfinding) are available here (https://github.com/jinnaiyuu/pbnf).
+
