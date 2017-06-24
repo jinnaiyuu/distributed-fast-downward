@@ -73,12 +73,10 @@ HDAStarSearch::HDAStarSearch(const Options &opts) :
 
 	if (opts.contains("pi")) {
 		calc_pi = opts.get<bool>("pi");
+		pi = 3252;
 	} else {
 		calc_pi = false;
 	}
-
-//	calc_pi = true;
-	pi = 3252;
 
 	node_sent = 0;
 	msg_sent = 0;
@@ -217,6 +215,10 @@ void HDAStarSearch::initialize() {
 	MPI_Barrier (MPI_COMM_WORLD);
 
 	timer.reset();
+}
+
+void HDAStarSearch::InitMPI() {
+
 }
 
 void HDAStarSearch::statistics() const {
@@ -561,6 +563,13 @@ int HDAStarSearch::step() {
 	return IN_PROGRESS;
 }
 
+bool HDAStarSearch::check_terminate() {
+}
+
+bool HDAStarSearch::update_incumbent() {
+
+}
+
 pair<SearchNode, bool> HDAStarSearch::fetch_next_node() {
 	/* TODO: The bulk of this code deals with multi-path dependence,
 	 which is a bit unfortunate since that is a special case that
@@ -606,6 +615,10 @@ pair<SearchNode, bool> HDAStarSearch::fetch_next_node() {
 // MPI related functions
 /////////////////////////////
 
+/**
+ * To send nodes via MPI we align them as a uchar vector for efficiency.
+ * In this function we generate a node and cast as a uchar vector.
+ */
 bool HDAStarSearch::generate_node_as_bytes(SearchNode* parent_node,
 		const Operator* op, unsigned char* d, unsigned int d_hash) {
 	////////////////////////////
@@ -1084,6 +1097,10 @@ int HDAStarSearch::termination() {
 
 	construct_plan();
 
+	/**
+	 * TODO: Flushing message is NOT REQUIRED for many cases.
+	 * It is to guarantee that MPI processes do not become zombies especially for MPICH3.
+	 */
 	MPI_Status status;
 	printf("Flushing all incoming messages... ");
 

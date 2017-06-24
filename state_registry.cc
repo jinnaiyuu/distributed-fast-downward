@@ -69,6 +69,10 @@ const State &StateRegistry::get_initial_state() {
 	return *cached_initial_state;
 }
 
+/**
+ * This function is for distributed algorithm which we need to access
+ * the state directly. Don't use it for sequential search.
+ */
 State &StateRegistry::get_successor_state_by_dummy(const State& parent,
 		const Operator &op) {
 	if (cached_dummy_state == 0) {
