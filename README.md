@@ -10,14 +10,7 @@ Domain specific solvers (15-puzzle, 24-puzzle, multiple sequence alignment, and 
 # Dependencies
 
 The code is built on top of fast-downward (http://www.fast-downward.org/) of Febuary 2014 (http://hg.fast-downward.org/shortlog/8532ca08bcac).
-To obtain this version of fast-downward run
-
-```
-hg clone http://hg.fast-downward.org DIRNAME
-hg checkout issue412
-```
-
-Download fast-downward and replace the src/search directory of fast-downward by this repository. Please read the instruction for fast-downward to learn the syntax (http://www.fast-downward.org/PlannerUsage). Note that you need to modify some part of the code if you are to use the newest version of the fast-downward.
+Please read the instruction for fast-downward to learn the syntax (http://www.fast-downward.org/PlannerUsage). Note that you need to modify some part of the code if you want to integrate parallel searches to the newest version of the fast-downward.
 
 To run, you need to install MPI library. We have confirmed that our code works with MPICH3, MPICH2, and OpenMPI (usually MPICH is faster than OpenMPI). MPICH2 and OpenMPI are in most of the package managers. For example in Debian/Ubuntu,
 
