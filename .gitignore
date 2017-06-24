@@ -3,3 +3,5 @@ preprocess/
 translate/
 VAL/
 sym-translate/
+search/.obj/
+search/cudd-2.5.0/

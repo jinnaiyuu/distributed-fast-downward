@@ -34,7 +34,7 @@ The other libraries are optional. We used jemalloc library (http://jemalloc.net/
 The syntax is same as fast-downward. You can run Hash Distributed A* (HDA*) by 
 
 ```
-./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge\_and\_shrink,zobrist)" 4
+./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge_and_shrink,zobrist)" 4
 ```
 
 First parameter of hdastar is a heuristic function.
@@ -43,49 +43,54 @@ The number you place on the last is the number of processors to run HDA*.
 
 Work distribution methods:
 
-ZHDA* (Kihimoto et al 2009)
+GRAZHDA*/sparsity (Jinnai&Fukunaga 2017)
 
 ```
-./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge\_and\_shrink,zobrist)" 4
-```
-
-AHDA* (Burns et al 2010)
-
-```
-./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge\_and\_shrink,abstraction(10000))" 4
+./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge_and_shrink,freq_depend(cut=sparsest_cut))" 4
 ```
 
 DAHDA* (Jinnai&Fukunaga 2016)
 
 ```
-./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge\_and\_shrink,aabstraction(0.7))" 4
+./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge_and_shrink,aabstraction(0.7))" 4
 ```
 
 GAZHDA* (Jinnai&Fukunaga 2016)
 
 ```
-./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge\_and\_shrink,freq\_depend(1.0,0.0))" 4
-```
-
-GRAZHDA*/sparsity (Jinnai&Fukunaga 2017)
-
-```
-./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge\_and\_shrink,freq\_depend(cut=sparsest\_cut))" 4
+./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge_and_shrink,freq_depend(1.0,0.0))" 4
 ```
 
 FAZHDA* (Jinnai&Fukunaga 2016)
 
 ```
-./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge\_and\_shrink,freq\_depend(0.5,0.0))" 4
+./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge_and_shrink,freq_depend(0.5,0.0))" 4
+```
+
+ZHDA* (Kihimoto et al 2009)
+
+```
+./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge_and_shrink,zobrist)" 4
+```
+
+AHDA* (Burns et al 2010)
+
+```
+./src/plan ./pddl/blocks-4-0.pddl --search "hdastar(merge_and_shrink,abstraction(10000))" 4
 ```
 
 
 To run MPI algorithm using job schedulers (torque, SunGridEngine, etc.) you need to learn the syntax of each scheduler. ./src/pbs-plan works on torque but may not be compatible with other schedulers.
 
 
+# Memo
+
+In our experiments GRAZHDA*/sparsity was the best performing algorithms for merge&shrink heuristic (low computation cost) and lmcut (high computation cost) on single-machine multicore environment (8 cores), commodity cluster (48 cores), and cloud cluster on EC2 (128 virtual core).
+Thus we expect GRAZHDA*/sparsity to be the best for most of the modern computer systems.
+
 # Author
 
-Yuu Jinnai <ddyuudd@gmail.com>
+Yuu Jinnai <ddyuudd@gmail.com> modified the original fast-downward (http://www.fast-downward.org/) to implement parallel algorithms.
 Please let me know if you wish to use my code but find my document unhelpful.
 I am trying to make this program easy to use for everybody so I appreciate your comments.
 
