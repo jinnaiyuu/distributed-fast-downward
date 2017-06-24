@@ -1,0 +1,44 @@
+#!/bin/bash
+
+#while getopts :a: OPT
+#do
+#    case $OPT in#
+#	a)
+#	    shift 1
+#	    ;;
+ #       \?) 
+#	    shift 1
+ #           ;;
+  #  esac
+#done
+
+#set -- $(getopt *: "$@")
+#while [ $# -gt 0 ]
+#do
+#    case "$1" in
+#    (-*) shift;;
+#    (*)  break;;
+#    esac
+#done
+
+while [[ "$1" =~ "-" ]]
+do
+    shift
+done
+
+BASEDIR=$1
+SEARCH=$2
+output=$3
+array=$4
+
+#cd "$BASEDIR"
+
+echo "$BASEDIR"
+echo $SEARCH
+echo $output
+echo $array
+#cat $output
+
+#mpirun -np 2 "$SEARCH" < $output $array
+"$SEARCH" $output $array
+

@@ -1,0 +1,93 @@
+#! /bin/bash
+
+set -e
+
+
+BASEDIR="$(dirname "$0")"
+CACHEDIR="/home/jinnai/cache"
+
+INSTANCE="$1"
+INST_F=`echo $1 | sed -e "s/\//--/g" | tr -d .`
+
+PID=`echo $$`
+
+function die {
+    echo "$@" 1>&2
+    exit 1
+}
+
+function usage {
+    die "usage: $(basename "$0") [DOMAIN_FILE] PROBLEM_FILE SEARCH_OPTION ..."
+}
+
+# Paths to planner components
+TRANSLATE="$BASEDIR/translate/translate.py"
+PREPROCESS="$BASEDIR/preprocess/preprocess"
+#SEARCH="$BASEDIR/search/downward"
+SEARCH="$BASEDIR/search/downward-1"
+
+
+shift
+
+PATH=/home/jinnai/library/bin:$PATH
+LD_LIBRARY_PATH=/home/jinnai/library/lib:$LD_LIBRARY_PATH
+export PATH
+export LD_LIBRARY_PATH
+
+ismpi=0
+threads=1
+re='^[0-9]+$'
+if [[ ${@: -1} =~ $re ]] ; then
+    threads=${@: -1}
+    ismpi=1
+fi
+echo $threads
+echo "ppn=$PBS_NUM_PPN"
+#exit 
+if [[ $ismpi -eq 0 ]] ; then
+    echo "3. Running search"
+    "$SEARCH" ${INSTANCE}.output "$@"
+    echo
+else
+
+    echo "3. Running search MPI"
+    MPISEARCH="$BASEDIR/mpi_search"
+    length=$(($#-1))
+    array=${@:1:$length}
+    echo "array is $array"
+    echo "INST_F=$INST_F"
+    echo "PBS_NODEFILE = $PBS_NODEFILE"
+    cat $PBS_NODEFILE
+    ypcat hosts
+    if [ $threads -gt 1 ]
+    then
+	echo "t=$threads"
+	echo "pid=$PID"
+	t=`expr $threads - 1`
+	for i in `seq 0 $t`
+	do
+	    echo "$CACHEDIR/$INST_F.$PID.$i"
+	    if [ -f $CACHEDIR/$INST_F.$PID.$i ]
+	    then
+		rm $CACHEDIR/$INST_F.$PID.$i
+	    fi
+	done
+	mpiexec.hydra -np $threads -hostfile $PBS_NODEFILE \
+	    -outfile-pattern "$CACHEDIR/$INST_F.$PID.%r" -errfile-pattern "$CACHEDIR/$INST_F.$PID.%re" \
+	    "$MPISEARCH"  "$BASEDIR" "$SEARCH" "${INSTANCE}.output" "$PBS_NUM_PPN" "$array"
+	if [ -f $CACHEDIR/$INST_F.$PID.o ]
+	then
+	    rm $CACHEDIR/$INST_F.$PID.o
+	fi 
+	for i in `seq 0 $t`
+	do
+	    echo "----- $i --------------" >> $CACHEDIR/$INST_F.$PID.o
+	    cat "$CACHEDIR/$INST_F.$PID.$i" >> $CACHEDIR/$INST_F.$PID.o
+	done
+	cat $CACHEDIR/$INST_F.$PID.o
+    else
+	mpiexec.hydra -np $threads -hostfile $PBS_NODEFILE "$MPISEARCH"  "$BASEDIR" "$SEARCH" "${INSTANCE}.output" "$PBS_NUM_PPN" "$array"
+    fi
+
+fi
+#mpirun -np $threads 

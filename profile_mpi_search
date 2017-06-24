@@ -1,0 +1,18 @@
+#!/bin/bash
+
+#BASEDIR=$1
+SEARCH=$1
+output=$2
+array=$3
+
+#cd "$BASEDIR"
+
+#echo "$BASEDIR"
+echo $SEARCH
+echo $output
+echo $array
+#cat $output
+
+#mpirun -np 2 "$SEARCH" < $output $array
+"$SEARCH" < $output $array
+
