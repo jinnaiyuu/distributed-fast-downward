@@ -1,6 +1,6 @@
 # Parallel Fast Downward
 
-Parallel fast-downward is a classical planner with parallel best-first search algorithms.
+Parallel fast-downward is a classical planner for distributed environments.
 It extends the state-of-the-art planner fast-downward (http://www.fast-downward.org/) to distributed computers.
 Parallel fast-downward implements the state-of-the-art parallel best-first search algorithms including Abstract Zobrist hashing (AZH) and Hash Distributed A\* (HDA\*).
 
