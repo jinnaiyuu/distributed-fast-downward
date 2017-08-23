@@ -1,4 +1,8 @@
-Parallel best-first search algorithms for classical planning.
+# Parallel Fast Downward
+
+Parallel fast-downward is a classical planner with parallel best-first search algorithms.
+It extends the state-of-the-art planner fast-downward (http://www.fast-downward.org/) to distributed computers.
+Parallel fast-downward implements the state-of-the-art parallel best-first search algorithms including Abstract Zobrist hashing (AZH) and Hash Distributed A\* (HDA\*).
 
 # Hash Distributed A*
 This is the source code for Hash Distributed A* (HDA*) and other parallel algorithms for classical planning. The algorithms are described in the paper:
@@ -20,7 +24,7 @@ sudo apt-get install mpich2
 
 You may also need to install libcr-dev to run MPI.
 
-The other libraries are optional. We used jemalloc library (http://jemalloc.net/) for memory management (can disable by removing -ljemalloc in makefile). We recommend mpiP (http://mpip.sourceforge.net/) for profiling MPI programs to understand the bottleneck of parallel algorithms.
+The other libraries are optional. We recommend mpiP (http://mpip.sourceforge.net/) for profiling MPI programs to understand the bottleneck of parallel algorithms.
 
 # Usage
 
