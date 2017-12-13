@@ -21,7 +21,7 @@ From: ubuntu
 
     ## Install all necessary dependencies.
     apt-get update
-    apt-get -y install cmake g++ make python g++-multilib build-essential libtool autoconf automake flex bison
+    apt-get -y install cmake g++ make python g++-multilib build-essential libtool autoconf automake flex bison time
 
     cd ./planner/
 
@@ -50,7 +50,7 @@ From: ubuntu
     PLANFILE=$3
 
     ## Call your planner.
-    ./src/plan \
+    ./planner/src/plan \
         $DOMAINFILE \
         $PROBLEMFILE \
         --search "hdastar(lmcut,zobrist)" 2

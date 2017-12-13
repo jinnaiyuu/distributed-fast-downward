@@ -133,11 +133,11 @@ public:
 };
 
 
-template <>
-class TokenParser<SymPH *> {
-public:
-    static inline SymPH *parse(OptionParser &p);
-};
+//template <>
+//class TokenParser<SymPH *> {
+//public:
+//    static inline SymPH *parse(OptionParser &p);
+//};
 
 ////////////////////////////
 // For HDA*
@@ -427,20 +427,20 @@ std::vector<T> TokenParser<std::vector<T> >::parse(OptionParser &p) {
 }
 
 
-SMASShrinkStrategy *TokenParser<SMASShrinkStrategy *>::parse(OptionParser &p) {
-	return lookup_in_registry<SMASShrinkStrategy>(p);
+//SMASShrinkStrategy *TokenParser<SMASShrinkStrategy *>::parse(OptionParser &p) {
+//	return lookup_in_registry<SMASShrinkStrategy>(p);
+//
+//}
 
-}
-
-SymPH *TokenParser<SymPH *>::parse(OptionParser &p) {
-//    ParseTree::iterator pt = p.get_parse_tree()->begin();
-//    if (Registry<SymPH *>::instance()->contains(pt->value)) {
-//        return Registry<SymPH *>::instance()->get(pt->value) (p);
-//    }
-//    p.error("Symbolic hierarchy policy not found");
-//    return 0;
-	return lookup_in_registry<SymPH>(p);
-}
+//SymPH *TokenParser<SymPH *>::parse(OptionParser &p) {
+////    ParseTree::iterator pt = p.get_parse_tree()->begin();
+////    if (Registry<SymPH *>::instance()->contains(pt->value)) {
+////        return Registry<SymPH *>::instance()->get(pt->value) (p);
+////    }
+////    p.error("Symbolic hierarchy policy not found");
+////    return 0;
+//	return lookup_in_registry<SymPH>(p);
+//}
 
 DistributionHash *TokenParser<DistributionHash *>::parse(OptionParser &p) {
 	return lookup_in_registry<DistributionHash>(p);

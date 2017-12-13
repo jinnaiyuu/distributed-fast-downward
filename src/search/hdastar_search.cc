@@ -217,9 +217,9 @@ void HDAStarSearch::initialize() {
 	timer.reset();
 }
 
-void HDAStarSearch::InitMPI() {
-
-}
+//void HDAStarSearch::InitMPI() {
+//
+//}
 
 void HDAStarSearch::statistics() const {
 
@@ -563,12 +563,12 @@ int HDAStarSearch::step() {
 	return IN_PROGRESS;
 }
 
-bool HDAStarSearch::check_terminate() {
-}
-
-bool HDAStarSearch::update_incumbent() {
-
-}
+//bool HDAStarSearch::check_terminate() {
+//}
+//
+//bool HDAStarSearch::update_incumbent() {
+//
+//}
 
 pair<SearchNode, bool> HDAStarSearch::fetch_next_node() {
 	/* TODO: The bulk of this code deals with multi-path dependence,

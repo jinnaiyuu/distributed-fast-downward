@@ -64,14 +64,14 @@ HEADERS = \
 
 ## Add feature_and_action_hash later.
 HEADERS +=hash/distribution_hash.h \
+		hdastar_search.h \
+		hash/freq_depend_hash.h \
+		hash/sparsity.h \
+		hash/cut_strategy.h
 #          hash/auto_selection_hash.h \
-#          hash/freq_depend_hash.h \
-#          hash/sparsity.h \
           hash/metis_hash.h \
-          hash/cut_strategy.h \
           hash/merge_and_shrink_hash.h \
           hash/shrink_clique.h \
-#          hdastar_search.h \
 
 
 ## Each of the following "HEADERS += ..." constructs defines a
@@ -82,15 +82,15 @@ HEADERS +=hash/distribution_hash.h \
 ## rebuild after such a change. Deleting the executable and running
 ## "make" to relink is enough; no need to do a complete rebuild.
 
-#HEADERS += additive_heuristic.h
-#HEADERS += blind_search_heuristic.h
-#HEADERS += cea_heuristic.h
-#HEADERS += cg_heuristic.h cg_cache.h
-#HEADERS += ff_heuristic.h
-#HEADERS += goal_count_heuristic.h
-#HEADERS += hm_heuristic.h
-#HEADERS += lm_cut_heuristic.h
-#HEADERS += max_heuristic.h
+HEADERS += additive_heuristic.h
+HEADERS += blind_search_heuristic.h
+HEADERS += cea_heuristic.h
+HEADERS += cg_heuristic.h cg_cache.h
+HEADERS += ff_heuristic.h
+HEADERS += goal_count_heuristic.h
+HEADERS += hm_heuristic.h
+HEADERS += lm_cut_heuristic.h
+HEADERS += max_heuristic.h
 #HEADERS += jinnai_heuristic.h
 
 HEADERS += merge_and_shrink/abstraction.h \
@@ -234,8 +234,8 @@ TARGET_PROFILE  = $(TARGET)$(TARGET_SUFFIX_PROFILE)
 OBJECTS_MPI_PROFILE = $(SOURCES:%.cc=.obj/%$(OBJECT_SUFFIX_MPI_PROFILE).o)
 TARGET_MPI_PROFILE  = $(TARGET)$(TARGET_SUFFIX_MPI_PROFILE)
 
-CC     = mpic++ #g++
-DEPEND = mpic++ -MM 
+CC     = mpic++.openmpi #g++
+DEPEND = mpic++.openmpi -MM 
 
 ## CCOPT, LINKOPT, POSTLINKOPT are options for compiler and linker
 ## that are used for all three targets (release, debug, and profile).
