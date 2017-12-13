@@ -269,7 +269,8 @@ endif
 LINKOPT  = -g
 LINKOPT += -L/usr/include/x86_64-linux-gnu/c++/4.8/bits/ #-m32 
 LINKOPT += 
-LINKOPT += -L/usr/lib #-lmpi_cxx  # -lmpi -lhwloc -Wl,-rpath
+LINKOPT += -L/usr/lib -lmpi_cxx  # -lmpi -lhwloc -Wl,-rpath
+LINKOPT += -L/usr/lib #-lmpi_cxx  # -lmpi -lhwloc -Wl,-rpath # MPICH
 
 POSTLINKOPT =
 

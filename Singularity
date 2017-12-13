@@ -21,7 +21,7 @@ From: ubuntu
 
     ## Install all necessary dependencies.
     apt-get update
-    apt-get -y install cmake g++ make python g++-multilib build-essential libtool autoconf automake flex bison time
+    apt-get -y install cmake g++ make python g++-multilib build-essential libtool autoconf automake flex bison time ssh rsh-client rsh-server
 
     cd ./planner/
 
