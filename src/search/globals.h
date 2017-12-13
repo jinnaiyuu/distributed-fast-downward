@@ -19,7 +19,7 @@ class State;
 class SuccessorGenerator;
 class Timer;
 class StateRegistry;
-class MutexGroup;
+//class MutexGroup;
 
 bool test_goal(const State &state);
 void save_plan(const std::vector<const Operator *> &plan, int iter);
@@ -63,7 +63,7 @@ extern std::vector<DomainTransitionGraph *> g_transition_graphs;
 extern CausalGraph *g_causal_graph;
 extern LegacyCausalGraph *g_legacy_causal_graph;
 
-extern std::vector<MutexGroup> *g_mutex_groups;
+// extern std::vector<MutexGroup> *g_mutex_groups;
 
 extern Timer g_timer;
 extern std::string g_plan_filename;

@@ -139,44 +139,44 @@ HEADERS += merge_and_shrink/abstraction.h \
            pdbs/util.h \
            pdbs/zero_one_pdbs_heuristic.h \
 
-HEADERS += sym/sym_controller.h \
-	   sym/sym_engine.h \
-           sym/symba.h \
-           sym/sym_variables.h \
-           sym/sym_manager.h \
-           sym/sym_util.h \
-           sym/sym_enums.h \
-           sym/sym_abstraction.h \
-           sym/sym_pdb.h \
-           sym/sym_transition.h \
-           sym/sym_params.h \
-           sym/sym_heuristic.h \
-           sym/sym_closed.h \
-           sym/sym_exploration.h \
-           sym/sym_hnode.h \
-           sym/sym_bdexp.h \
-           sym/sym_ph.h \
-           sym/sym_ph_pdbs.h \
-           sym/sym_ph_smas.h \
-           sym/sym_estimate.h \
-           sym/sym_estimate_linear.h \
-           sym/sym_solution.h \
-           sym/smas_shrink_bisimulation.h \
-           sym/smas_shrink_bucket_based.h \
-           sym/smas_shrink_fh.h \
-           sym/smas_shrink_random.h \
-           sym/smas_shrink_all.h \
-           sym/smas_shrink_strategy.h \
-           sym/smas_variable_order_finder.h \
-           sym/smas_abs_state.h \
-           sym/smas_shrink_state.h \
-           sym/sym_smas.h \
-           sym/spmas_heuristic.h \
-		   mutex_group.h \
-	   sym/test/sym_test.h \
-	   sym/test/sym_test_mutex.h \
-
-HEADERS += sym/sym_hdastar.h \
+#HEADERS += sym/sym_controller.h \
+#	   sym/sym_engine.h \
+#           sym/symba.h \
+#           sym/sym_variables.h \
+#           sym/sym_manager.h \
+#           sym/sym_util.h \
+#           sym/sym_enums.h \
+#           sym/sym_abstraction.h \
+#           sym/sym_pdb.h \
+#           sym/sym_transition.h \
+#           sym/sym_params.h \
+#           sym/sym_heuristic.h \
+#           sym/sym_closed.h \
+#           sym/sym_exploration.h \
+#           sym/sym_hnode.h \
+#           sym/sym_bdexp.h \
+#           sym/sym_ph.h \
+#           sym/sym_ph_pdbs.h \
+#           sym/sym_ph_smas.h \
+#           sym/sym_estimate.h \
+#           sym/sym_estimate_linear.h \
+#           sym/sym_solution.h \
+#           sym/smas_shrink_bisimulation.h \
+#           sym/smas_shrink_bucket_based.h \
+#           sym/smas_shrink_fh.h \
+#           sym/smas_shrink_random.h \
+#           sym/smas_shrink_all.h \
+#           sym/smas_shrink_strategy.h \
+#           sym/smas_variable_order_finder.h \
+#           sym/smas_abs_state.h \
+#           sym/smas_shrink_state.h \
+#           sym/sym_smas.h \
+#           sym/spmas_heuristic.h \
+#		   mutex_group.h \
+#	   sym/test/sym_test.h \
+#	   sym/test/sym_test_mutex.h \
+#
+#HEADERS += sym/sym_hdastar.h \
 
 SHELL = /bin/bash
 
@@ -247,7 +247,7 @@ CCOPT += -std=c++11
 CCOPT += #-m32
 CCOPT += -Wall -W -Wno-unused-parameter -Wno-variadic-macros -Wno-sign-compare -Wno-deprecated -pedantic -Werror -DSTATE_VAR_BYTES=$(STATE_VAR_BYTES)
 CCOPT += -L/usr/lib
-CCOPT += -I${JEMALLOC_PATH}/include -L${JEMALLOC_PATH}/lib -Wl,-rpath,${JEMALLOC_PATH}/lib -ljemalloc
+# CCOPT += -I${JEMALLOC_PATH}/include -L${JEMALLOC_PATH}/lib -Wl,-rpath,${JEMALLOC_PATH}/lib -ljemalloc
 
 ## The following lines contain workarounds for bugs when
 ## cross-compiling to 64 bit on 32-bit systems using gcc 4.4 or gcc
@@ -291,9 +291,13 @@ LINKOPT_DEBUG    =
 LINKOPT_PROFILE  = -pg
 LINKOPT_MPI_PROFILE = -L/usr/local/lib -lmpiP -lm -lunwind
 
-POSTLINKOPT_RELEASE = -ljemalloc
-POSTLINKOPT_DEBUG   = -ljemalloc
-POSTLINKOPT_PROFILE = -ljemalloc
+POSTLINKOPT_RELEASE = 
+POSTLINKOPT_DEBUG   = 
+POSTLINKOPT_PROFILE = 
+
+#POSTLINKOPT_RELEASE = -ljemalloc
+#POSTLINKOPT_DEBUG   = -ljemalloc
+#POSTLINKOPT_PROFILE = -ljemalloc
 
 ifeq ($(LINK_RELEASE_STATICALLY), 1)
 LINKOPT_RELEASE += #-static -static-libgcc
@@ -310,7 +314,8 @@ POSTLINKOPT_PROFILE += -lrt
 # POSTLINKOPT_PROFILE += -lc_p
 endif
 
-POSTLINKOPT_MPI_PROFILE = -lmpiP -lm -lunwind -lrt -ljemalloc
+POSTLINKOPT_MPI_PROFILE = -lmpiP -lm -lunwind -lrt
+# -ljemalloc
 
 
 ## Define the default target up here so that the LP stuff below
@@ -373,30 +378,30 @@ endif
 
 endif # LP code
 
-$(CUDD_ROOT):
-	cd cudd-2.5.0 && make objlib
-
-$(TARGET_RELEASE) $(OBJECTS_RELEASE): $(CUDD_ROOT)
-$(TARGET_DEBUG) $(OBJECTS_DEBUG): $(CUDD_ROOT)
-$(TARGET_PROFILE) $(OBJECTS_PROFILE): $(CUDD_ROOT)
-
-CUDD_CCOPT = -Icudd-2.5.0/include
-
-CUDD_LINKOPT = cudd-2.5.0/obj/libobj.a \
-   cudd-2.5.0/cudd/libcudd.a \
-   cudd-2.5.0/dddmp/libdddmp.a \
-   cudd-2.5.0/mtr/libmtr.a \
-   cudd-2.5.0/epd/libepd.a \
-   cudd-2.5.0/util/libutil.a \
-   cudd-2.5.0/st/libst.a
-
-
-#CUDD Includes
-CCOPT += $(CUDD_CCOPT)
-
-POSTLINKOPT_RELEASE += $(CUDD_LINKOPT)
-POSTLINKOPT_DEBUG += $(CUDD_LINKOPT)
-POSTLINKOPT_PROFILE += $(CUDD_LINKOPT)
+#$(CUDD_ROOT):
+#	cd cudd-2.5.0 && make objlib
+#
+#$(TARGET_RELEASE) $(OBJECTS_RELEASE): $(CUDD_ROOT)
+#$(TARGET_DEBUG) $(OBJECTS_DEBUG): $(CUDD_ROOT)
+#$(TARGET_PROFILE) $(OBJECTS_PROFILE): $(CUDD_ROOT)
+#
+#CUDD_CCOPT = -Icudd-2.5.0/include
+#
+#CUDD_LINKOPT = cudd-2.5.0/obj/libobj.a \
+#   cudd-2.5.0/cudd/libcudd.a \
+#   cudd-2.5.0/dddmp/libdddmp.a \
+#   cudd-2.5.0/mtr/libmtr.a \
+#   cudd-2.5.0/epd/libepd.a \
+#   cudd-2.5.0/util/libutil.a \
+#   cudd-2.5.0/st/libst.a
+#
+#
+##CUDD Includes
+#CCOPT += $(CUDD_CCOPT)
+#
+#POSTLINKOPT_RELEASE += $(CUDD_LINKOPT)
+#POSTLINKOPT_DEBUG += $(CUDD_LINKOPT)
+#POSTLINKOPT_PROFILE += $(CUDD_LINKOPT)
 
 
 all: release debug profile

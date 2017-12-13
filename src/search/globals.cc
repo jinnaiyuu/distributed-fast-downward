@@ -12,7 +12,7 @@
 #include "successor_generator.h"
 #include "timer.h"
 #include "utilities.h"
-#include "mutex_group.h"
+// #include "mutex_group.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -158,7 +158,7 @@ void read_variables(istream &in) {
 	}
 }
 
-//void read_mutexes(istream &in) {
+//oid read_mutexes(istream &in) {
 //	g_inconsistent_facts.resize(g_num_facts * g_num_facts, false);
 //
 //	int num_mutex_groups;
@@ -198,7 +198,7 @@ void read_variables(istream &in) {
 //			}
 //		}
 //	}
-//}
+//
 
 void read_mutexes(istream &in) {
 	g_inconsistent_facts.resize(g_variable_domain.size());
@@ -214,7 +214,7 @@ void read_mutexes(istream &in) {
 	 If we ever change this representation, this is something to be
 	 aware of. */
 
-	g_mutex_groups = new vector<MutexGroup>();
+	//g_mutex_groups = new vector<MutexGroup>();
 
 	for (size_t i = 0; i < num_mutex_groups; ++i) {
 //    	streampos tmp = in.tellg();
@@ -238,9 +238,9 @@ void read_mutexes(istream &in) {
 		check_magic(in, "end_mutex_group");
 
 		// YJ: Added mutex group here for Symbolic search
-		MutexGroup mg = MutexGroup(invariant_group,
-				(exactly_one_str == "exactly_one"), (dir == "fw"));
-		g_mutex_groups->push_back(mg);
+		// MutexGroup mg = MutexGroup(invariant_group,
+		//		(exactly_one_str == "exactly_one"), (dir == "fw"));
+		// g_mutex_groups->push_back(mg);
 //		MutexGroup mgbw = MutexGroup(invariant_group,
 //				(exactly_one_str == "exactly_one"), (dir != "fw"));
 //		g_mutex_groups->push_back(mgbw);
@@ -419,7 +419,7 @@ SuccessorGenerator *g_successor_generator;
 vector<DomainTransitionGraph *> g_transition_graphs;
 CausalGraph *g_causal_graph;
 LegacyCausalGraph *g_legacy_causal_graph;
-vector<MutexGroup> *g_mutex_groups;
+// vector<MutexGroup> *g_mutex_groups;
 
 Timer g_timer;
 string g_plan_filename = "sas_plan";

@@ -21,7 +21,7 @@ From: ubuntu
 
     ## Install all necessary dependencies.
     apt-get update
-    apt-get -y install cmake g++ make python g++-multilib build-essential libtool autoconf automake
+    apt-get -y install cmake g++ make python g++-multilib build-essential libtool autoconf automake flex bison
 
     cd ./planner/
 
@@ -32,7 +32,11 @@ From: ubuntu
     make -j4
     make install
     cd ../../
+    ldconfig
     
+    echo "Testing if mpic++ is working..."
+    which mpic++
+
     ## Build your planner
     cd ./src
     ./build_all
