@@ -234,8 +234,8 @@ TARGET_PROFILE  = $(TARGET)$(TARGET_SUFFIX_PROFILE)
 OBJECTS_MPI_PROFILE = $(SOURCES:%.cc=.obj/%$(OBJECT_SUFFIX_MPI_PROFILE).o)
 TARGET_MPI_PROFILE  = $(TARGET)$(TARGET_SUFFIX_MPI_PROFILE)
 
-CC     = mpic++.openmpi #g++
-DEPEND = mpic++.openmpi -MM 
+CC     = mpic++ #g++
+DEPEND = mpic++ -MM 
 
 ## CCOPT, LINKOPT, POSTLINKOPT are options for compiler and linker
 ## that are used for all three targets (release, debug, and profile).

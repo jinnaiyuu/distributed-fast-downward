@@ -94,7 +94,7 @@ else
 	    fi 
 	done
 	
-	mpirun.openmpi -np $threads -output-filename "$INSTANCE" "$MPISEARCH"  "$BASEDIR" "$SEARCH" "output" "$array" # Syntax for OpenMPI (IPC is run with OpenMPI)
+	mpirun -np $threads -output-filename "$INSTANCE" "$MPISEARCH"  "$BASEDIR" "$SEARCH" "output" "$array" # Syntax for OpenMPI (IPC is run with OpenMPI)
 	# mpirun -np $threads -outfile-pattern "$INSTANCE.%r" "$MPISEARCH"  "$BASEDIR" "$SEARCH" "output" "$array" # Syntax for MPICH
 	if [ -f $INSTANCE.o ]
 	then
@@ -107,7 +107,7 @@ else
 	done
 	cat $INSTANCE.o    
     else
-	mpirun.openmpi -np $threads "$MPISEARCH"  "$BASEDIR" "$SEARCH" "output" "$array"
+	mpirun -np $threads "$MPISEARCH"  "$BASEDIR" "$SEARCH" "output" "$array"
     fi
 
 #    mpirun -np $threads --mca btl self,vader "$MPISEARCH" "$BASEDIR" "$SEARCH" "output" "$array"

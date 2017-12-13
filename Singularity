@@ -26,7 +26,9 @@ From: ubuntu
     cd ./planner/
 
     ## Install openmpi-2.1.0
-    cd ./library/openmpi-2.1.0
+    cd ./library/
+    tar -xvzf openmpi-2.1.0.tar.gz
+    cd ./openmpi-2.1.0
     autoreconf -f -i
     ./configure CFLAGS=-m64 CXXFLAGS=-m64 
     make -j4
@@ -50,7 +52,7 @@ From: ubuntu
     PLANFILE=$3
 
     ## Call your planner.
-    ./planner/src/plan \
+    /planner/src/plan \
         $DOMAINFILE \
         $PROBLEMFILE \
         --search "hdastar(lmcut,zobrist)" 2
