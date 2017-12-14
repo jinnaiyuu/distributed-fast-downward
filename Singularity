@@ -39,7 +39,10 @@ From: ubuntu
     echo "Testing if mpic++ is working..."
     which mpic++
 
-    ## Build your planner
+    PATH=$PATH:/usr/local/bin
+    LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+
+    # Build your planner
     cd ./src
     ./build_all
 
@@ -50,6 +53,9 @@ From: ubuntu
     DOMAINFILE=$1
     PROBLEMFILE=$2
     PLANFILE=$3
+
+    PATH=$PATH:/usr/local/bin
+    LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
 
     ## Call your planner.
     /planner/src/plan \

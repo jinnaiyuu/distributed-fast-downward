@@ -269,8 +269,8 @@ endif
 LINKOPT  = -g
 LINKOPT += -L/usr/include/x86_64-linux-gnu/c++/4.8/bits/ #-m32 
 LINKOPT += 
-LINKOPT += -L/usr/lib -lmpi_cxx  # -lmpi -lhwloc -Wl,-rpath
-LINKOPT += -L/usr/lib #-lmpi_cxx  # -lmpi -lhwloc -Wl,-rpath # MPICH
+LINKOPT += -L/usr/lib -lmpi # -Wl,-rpath
+# LINKOPT += -L/usr/lib #-lmpi_cxx  # -lmpi -lhwloc -Wl,-rpath # MPICH
 
 POSTLINKOPT =
 
@@ -405,7 +405,8 @@ endif # LP code
 #POSTLINKOPT_PROFILE += $(CUDD_LINKOPT)
 
 
-all: release debug profile
+all: debug
+# all: release debug profile
 
 ## Build rules for the release target follow.
 
